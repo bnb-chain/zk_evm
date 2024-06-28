@@ -224,15 +224,15 @@ impl ProcessedBlockTrace {
         other_data: OtherBlockData,
     ) -> TraceParsingResult<Vec<GenerationInputs>> {
         let mut curr_block_tries = PartialTrieState {
-            state: self.tries.state.clone(),
-            storage: self.tries.storage.clone(),
+            state: self.state.clone(),
+            storage: self.storage.clone(),
             ..Default::default()
         };
 
         // This is just a copy of `curr_block_tries`.
         let initial_tries_for_dummies = PartialTrieState {
-            state: self.tries.state,
-            storage: self.tries.storage,
+            state: self.state,
+            storage: self.storage,
             ..Default::default()
         };
 

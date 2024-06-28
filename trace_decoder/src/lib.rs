@@ -295,7 +295,6 @@ pub fn entrypoint(
     use crate::processed_block_trace::{
         CodeHashResolving, ProcessedBlockTrace, ProcessedBlockTracePreImages,
     };
-    use crate::PartialTriePreImages;
     use crate::{
         BlockTraceTriePreImages, CombinedPreImages, SeparateStorageTriesPreImage,
         SeparateTriePreImage, SeparateTriePreImages,
@@ -312,13 +311,11 @@ pub fn entrypoint(
             state: SeparateTriePreImage::Direct(state),
             storage: SeparateStorageTriesPreImage::MultipleTries(storage),
         }) => ProcessedBlockTracePreImages {
-            tries: PartialTriePreImages {
-                state,
-                storage: storage
-                    .into_iter()
-                    .map(|(k, SeparateTriePreImage::Direct(v))| (k, v))
-                    .collect(),
-            },
+            state,
+            storage: storage
+                .into_iter()
+                .map(|(k, SeparateTriePreImage::Direct(v))| (k, v))
+                .collect(),
             extra_code_hash_mappings: None,
         },
         BlockTraceTriePreImages::Combined(CombinedPreImages { compact }) => {
@@ -330,10 +327,8 @@ pub fn entrypoint(
                 storage,
             } = zero_jerigon::frontend(instructions)?;
             ProcessedBlockTracePreImages {
-                tries: PartialTriePreImages {
-                    state,
-                    storage: storage.into_iter().collect(),
-                },
+                state,
+                storage: storage.into_iter().collect(),
                 extra_code_hash_mappings: match code.is_empty() {
                     true => None,
                     false => Some(
@@ -347,7 +342,6 @@ pub fn entrypoint(
     };
 
     let all_accounts_in_pre_images = pre_images
-        .tries
         .state
         .items()
         .filter_map(|(addr, data)| {
@@ -397,21 +391,16 @@ pub fn entrypoint(
         .collect::<Vec<_>>();
 
     Ok(ProcessedBlockTrace {
-        tries: pre_images.tries,
         txn_info,
         withdrawals: other.b_data.withdrawals.clone(),
+        state: pre_images.state,
+        storage: pre_images.storage,
     }
     .into_txn_proof_gen_ir(other)?)
 }
 
 fn hash(bytes: &[u8]) -> ethereum_types::H256 {
     keccak_hash::keccak(bytes).0.into()
-}
-
-#[derive(Debug, Default)]
-struct PartialTriePreImages {
-    pub state: HashedPartialTrie,
-    pub storage: HashMap<H256, HashedPartialTrie>,
 }
 
 /// Like `#[serde(with = "hex")`, but tolerates and emits leading `0x` prefixes

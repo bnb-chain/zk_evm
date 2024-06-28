@@ -5,9 +5,9 @@ use std::iter::once;
 use ethereum_types::{Address, H256, U256};
 use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
 use mpt_trie::nibbles::Nibbles;
+use mpt_trie::partial_trie::HashedPartialTrie;
 
 use crate::hash;
-use crate::PartialTriePreImages;
 use crate::{ContractCodeUsage, TxnInfo};
 
 // 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
@@ -24,14 +24,16 @@ pub const EMPTY_TRIE_HASH: H256 = H256([
 
 #[derive(Debug)]
 pub(crate) struct ProcessedBlockTrace {
-    pub tries: PartialTriePreImages,
+    pub state: HashedPartialTrie,
+    pub storage: HashMap<H256, HashedPartialTrie>,
     pub txn_info: Vec<ProcessedTxnInfo>,
     pub withdrawals: Vec<(Address, U256)>,
 }
 
 #[derive(Debug)]
 pub(crate) struct ProcessedBlockTracePreImages {
-    pub tries: PartialTriePreImages,
+    pub state: HashedPartialTrie,
+    pub storage: HashMap<H256, HashedPartialTrie>,
     pub extra_code_hash_mappings: Option<HashMap<H256, Vec<u8>>>,
 }
 
