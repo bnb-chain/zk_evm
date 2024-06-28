@@ -314,7 +314,7 @@ pub fn entrypoint(
                 .into_iter()
                 .map(|(k, SeparateTriePreImage::Direct(v))| (k, v))
                 .collect::<HashMap<_, _>>(),
-            None,
+            HashMap::new(),
         ),
         BlockTraceTriePreImages::Combined(CombinedPreImages { compact }) => {
             let instructions =
@@ -328,14 +328,9 @@ pub fn entrypoint(
                 (
                     state,
                     storage.into_iter().collect(),
-                    match code.is_empty() {
-                        true => None,
-                        false => Some(
-                            code.into_iter()
-                                .map(|it| (crate::hash(&it), it.into_vec()))
-                                .collect::<HashMap<_, _>>(),
-                        ),
-                    },
+                    code.into_iter()
+                        .map(|it| (crate::hash(&it), it.into_vec()))
+                        .collect(),
                 )
             }
         }
@@ -349,17 +344,12 @@ pub fn entrypoint(
         })
         .collect::<Vec<_>>();
 
-    let code_db = {
-        let mut code_db = code_db.unwrap_or_default();
-        if let Some(code_mappings) = extra_code_hash_mappings {
-            code_db.extend(code_mappings);
-        }
-        code_db
-    };
-
     let mut code_hash_resolver = CodeHashResolving {
         client_code_hash_resolve_f: |it: &ethereum_types::H256| resolve(*it),
-        extra_code_hash_mappings: code_db,
+        extra_code_hash_mappings: extra_code_hash_mappings
+            .into_iter()
+            .chain(code_db.unwrap_or_default()) // later keys overwrite
+            .collect(),
     };
 
     let last_tx_idx = txn_info.len().saturating_sub(1);
