@@ -31,13 +31,6 @@ pub(crate) struct ProcessedBlockTrace {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProcessedBlockTracePreImages {
-    pub state: HashedPartialTrie,
-    pub storage: HashMap<H256, HashedPartialTrie>,
-    pub extra_code_hash_mappings: Option<HashMap<H256, Vec<u8>>>,
-}
-
-#[derive(Debug)]
 pub(crate) struct ProcessedTxnInfo {
     pub nodes_used_by_txn: NodesUsedByTxn,
     pub contract_code_accessed: HashMap<H256, Vec<u8>>,

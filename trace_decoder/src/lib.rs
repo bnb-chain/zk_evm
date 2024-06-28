@@ -292,9 +292,7 @@ pub fn entrypoint(
     use evm_arithmetization::generation::mpt::AccountRlp;
     use mpt_trie::partial_trie::PartialTrie as _;
 
-    use crate::processed_block_trace::{
-        CodeHashResolving, ProcessedBlockTrace, ProcessedBlockTracePreImages,
-    };
+    use crate::processed_block_trace::{CodeHashResolving, ProcessedBlockTrace};
     use crate::{
         BlockTraceTriePreImages, CombinedPreImages, SeparateStorageTriesPreImage,
         SeparateTriePreImage, SeparateTriePreImages,
@@ -306,18 +304,18 @@ pub fn entrypoint(
         txn_info,
     } = trace;
 
-    let pre_images = match trie_pre_images {
+    let (state, storage, extra_code_hash_mappings) = match trie_pre_images {
         BlockTraceTriePreImages::Separate(SeparateTriePreImages {
             state: SeparateTriePreImage::Direct(state),
             storage: SeparateStorageTriesPreImage::MultipleTries(storage),
-        }) => ProcessedBlockTracePreImages {
+        }) => (
             state,
-            storage: storage
+            storage
                 .into_iter()
                 .map(|(k, SeparateTriePreImage::Direct(v))| (k, v))
-                .collect(),
-            extra_code_hash_mappings: None,
-        },
+                .collect::<HashMap<_, _>>(),
+            None,
+        ),
         BlockTraceTriePreImages::Combined(CombinedPreImages { compact }) => {
             let instructions =
                 wire::parse(&compact).context("couldn't parse instructions from binary format")?;
@@ -326,23 +324,24 @@ pub fn entrypoint(
                 code,
                 storage,
             } = zero_jerigon::frontend(instructions)?;
-            ProcessedBlockTracePreImages {
-                state,
-                storage: storage.into_iter().collect(),
-                extra_code_hash_mappings: match code.is_empty() {
-                    true => None,
-                    false => Some(
-                        code.into_iter()
-                            .map(|it| (crate::hash(&it), it.into_vec()))
-                            .collect(),
-                    ),
-                },
+            {
+                (
+                    state,
+                    storage.into_iter().collect(),
+                    match code.is_empty() {
+                        true => None,
+                        false => Some(
+                            code.into_iter()
+                                .map(|it| (crate::hash(&it), it.into_vec()))
+                                .collect::<HashMap<_, _>>(),
+                        ),
+                    },
+                )
             }
         }
     };
 
-    let all_accounts_in_pre_images = pre_images
-        .state
+    let all_accounts_in_pre_images = state
         .items()
         .filter_map(|(addr, data)| {
             data.as_val()
@@ -352,7 +351,7 @@ pub fn entrypoint(
 
     let code_db = {
         let mut code_db = code_db.unwrap_or_default();
-        if let Some(code_mappings) = pre_images.extra_code_hash_mappings {
+        if let Some(code_mappings) = extra_code_hash_mappings {
             code_db.extend(code_mappings);
         }
         code_db
@@ -393,8 +392,8 @@ pub fn entrypoint(
     Ok(ProcessedBlockTrace {
         txn_info,
         withdrawals: other.b_data.withdrawals.clone(),
-        state: pre_images.state,
-        storage: pre_images.storage,
+        state,
+        storage,
     }
     .into_txn_proof_gen_ir(other)?)
 }
