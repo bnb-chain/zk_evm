@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::iter::once;
 
 use ethereum_types::{Address, H256, U256};
 use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
@@ -9,12 +8,6 @@ use mpt_trie::partial_trie::HashedPartialTrie;
 
 use crate::hash;
 use crate::{ContractCodeUsage, TxnInfo};
-
-// 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
-const EMPTY_CODE_HASH: H256 = H256([
-    197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
-    130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
-]);
 
 /// 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
 pub const EMPTY_TRIE_HASH: H256 = H256([
@@ -48,7 +41,7 @@ impl TxnInfo {
         hash2code: &mut HashMap<H256, Vec<u8>>,
     ) -> ProcessedTxnInfo {
         let mut nodes_used_by_txn = NodesUsedByTxn::default();
-        let mut contract_code_accessed = create_empty_code_access_map();
+        let mut contract_code_accessed = HashMap::from([(hash([]), Vec::new())]);
 
         for (addr, trace) in self.traces {
             let hashed_addr = hash(addr.as_bytes());
@@ -66,7 +59,7 @@ impl TxnInfo {
             nodes_used_by_txn.storage_accesses.push((
                 hashed_addr,
                 storage_access_keys
-                    .map(|k| Nibbles::from_h256_be(hash(&k.0)))
+                    .map(|k| Nibbles::from_h256_be(hash(k)))
                     .collect(),
             ));
 
@@ -179,10 +172,6 @@ fn process_rlped_receipt_node_bytes(raw_bytes: Vec<u8>) -> Vec<u8> {
             rlp::decode::<Vec<u8>>(&raw_bytes).unwrap()
         }
     }
-}
-
-fn create_empty_code_access_map() -> HashMap<H256, Vec<u8>> {
-    HashMap::from_iter(once((EMPTY_CODE_HASH, Vec::new())))
 }
 
 pub(crate) type StorageAccess = Vec<Nibbles>;

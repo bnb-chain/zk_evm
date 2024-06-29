@@ -94,6 +94,7 @@ use std::collections::HashMap;
 use ethereum_types::{Address, U256};
 use evm_arithmetization::proof::{BlockHashes, BlockMetadata};
 use evm_arithmetization::GenerationInputs;
+use keccak_hash::keccak as hash;
 use keccak_hash::H256;
 use mpt_trie::partial_trie::HashedPartialTrie;
 use serde::{Deserialize, Serialize};
@@ -383,10 +384,6 @@ pub fn entrypoint(
         storage,
     }
     .into_txn_proof_gen_ir(other)?)
-}
-
-fn hash(bytes: &[u8]) -> ethereum_types::H256 {
-    keccak_hash::keccak(bytes).0.into()
 }
 
 /// Like `#[serde(with = "hex")`, but tolerates and emits leading `0x` prefixes

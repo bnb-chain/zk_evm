@@ -324,7 +324,7 @@ impl Visitor {
                         self.frontend.code.insert(code);
                         hash
                     }
-                    None => crate::hash(&[]),
+                    None => crate::hash([]),
                 },
                 storage_root: {
                     let storage = node2trie(match storage {
