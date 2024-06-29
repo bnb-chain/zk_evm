@@ -22,9 +22,7 @@ use thiserror::Error;
 
 use crate::{
     hash,
-    processed_block_trace::{
-        NodesUsedByTxn, ProcessedBlockTrace, ProcessedTxnInfo, StateTrieWrites, TxnMetaState,
-    },
+    processed_block_trace::{NodesUsedByTxn, ProcessedTxnInfo, StateTrieWrites, TxnMetaState},
     OtherBlockData,
 };
 
@@ -218,7 +216,7 @@ struct TrieDeltaApplicationOutput {
     additional_storage_trie_paths_to_not_hash: HashMap<H256, Vec<Nibbles>>,
 }
 
-impl ProcessedBlockTrace {
+impl crate::ProcessedBlockTrace {
     pub fn into_txn_proof_gen_ir(
         self,
         other_data: OtherBlockData,
@@ -294,7 +292,9 @@ fn update_txn_and_receipt_tries(
     txn_idx: usize,
 ) -> TrieOpResult<()> {
     let txn_k = Nibbles::from_bytes_be(&rlp::encode(&txn_idx)).unwrap();
-    trie_state.txn.insert(txn_k, meta.txn_bytes())?;
+    trie_state
+        .txn
+        .insert(txn_k, meta.txn_bytes.clone().unwrap_or_default())?;
 
     trie_state
         .receipt
@@ -874,15 +874,6 @@ fn account_from_rlped_bytes(bytes: &[u8]) -> TraceParsingResult<AccountRlp> {
             TraceParsingErrorReason::AccountDecode(hex::encode(bytes), err.to_string()),
         ))
     })
-}
-
-impl TxnMetaState {
-    fn txn_bytes(&self) -> Vec<u8> {
-        match self.txn_bytes.as_ref() {
-            Some(v) => v.clone(),
-            None => Vec::default(),
-        }
-    }
 }
 
 fn update_val_if_some<T>(target: &mut T, opt: Option<T>) {

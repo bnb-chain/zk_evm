@@ -254,15 +254,6 @@ pub enum ContractCodeUsage {
     Write(#[serde(with = "crate::hex")] Vec<u8>),
 }
 
-impl ContractCodeUsage {
-    fn get_code_hash(&self) -> H256 {
-        match self {
-            ContractCodeUsage::Read(hash) => *hash,
-            ContractCodeUsage::Write(bytes) => hash(bytes),
-        }
-    }
-}
-
 /// Other data that is needed for proof gen.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OtherBlockData {
@@ -293,7 +284,6 @@ pub fn entrypoint(
     use evm_arithmetization::generation::mpt::AccountRlp;
     use mpt_trie::partial_trie::PartialTrie as _;
 
-    use crate::processed_block_trace::ProcessedBlockTrace;
     use crate::{
         BlockTraceTriePreImages, CombinedPreImages, SeparateStorageTriesPreImage,
         SeparateTriePreImage, SeparateTriePreImages,
@@ -369,7 +359,8 @@ pub fn entrypoint(
                 Vec::new()
             };
 
-            t.into_processed_txn_info(
+            processed_block_trace::process(
+                t,
                 &all_accounts_in_pre_images,
                 &extra_state_accesses,
                 &mut hash2code,
@@ -384,6 +375,14 @@ pub fn entrypoint(
         storage,
     }
     .into_txn_proof_gen_ir(other)?)
+}
+
+#[derive(Debug)]
+struct ProcessedBlockTrace {
+    state: HashedPartialTrie,
+    storage: HashMap<H256, HashedPartialTrie>,
+    txn_info: Vec<processed_block_trace::ProcessedTxnInfo>,
+    withdrawals: Vec<(Address, U256)>,
 }
 
 /// Like `#[serde(with = "hex")`, but tolerates and emits leading `0x` prefixes
