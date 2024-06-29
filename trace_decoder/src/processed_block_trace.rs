@@ -166,7 +166,6 @@ pub fn process(
 
     let TxnMeta {
         byte_code,
-        new_txn_trie_node_byte,
         new_receipt_trie_node_byte,
         gas_used,
     } = meta;

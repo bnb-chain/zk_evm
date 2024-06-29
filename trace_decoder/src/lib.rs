@@ -188,12 +188,6 @@ pub struct TxnMeta {
     #[serde(with = "crate::hex")]
     pub byte_code: Vec<u8>,
 
-    /// Rlped bytes of the new txn value inserted into the txn trie by
-    /// this txn. Note that the key is not included and this is only the rlped
-    /// value of the node!
-    #[serde(with = "crate::hex")]
-    pub new_txn_trie_node_byte: Vec<u8>,
-
     /// Rlped bytes of the new receipt value inserted into the receipt trie by
     /// this txn. Note that the key is not included and this is only the rlped
     /// value of the node!
