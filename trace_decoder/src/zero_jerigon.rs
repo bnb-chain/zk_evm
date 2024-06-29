@@ -441,15 +441,9 @@ fn test() {
         assert_eq!(case.expected_state_root, frontend.state.hash());
 
         for (address, data) in frontend.state.items() {
-            if let ValOrHash::Val(bytes) = data {
+            if let ValOrHash::Val(_) = data {
                 let address = ethereum_types::H256::from_slice(&address.bytes_be());
-                let account =
-                    rlp::decode::<evm_arithmetization::generation::mpt::AccountRlp>(&bytes)
-                        .unwrap();
-                let storage_root = account.storage_root;
-                if storage_root != crate::processed_block_trace::EMPTY_TRIE_HASH {
-                    assert!(frontend.storage.contains_key(&address))
-                }
+                assert!(frontend.storage.contains_key(&address));
             }
         }
     }

@@ -4,15 +4,10 @@ use std::fmt::Debug;
 use ethereum_types::{H256, U256};
 use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
 use mpt_trie::nibbles::Nibbles;
+use mpt_trie::partial_trie::{HashedPartialTrie, PartialTrie as _};
 
 use crate::{hash, TxnMeta, TxnTrace};
 use crate::{ContractCodeUsage, TxnInfo};
-
-/// 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
-pub const EMPTY_TRIE_HASH: H256 = H256([
-    86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153,
-    108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
-]);
 
 #[derive(Debug)]
 pub(crate) struct ProcessedTxnInfo {
@@ -154,7 +149,7 @@ pub fn process(
 
     let all_accounts_with_non_empty_storage = all_accounts_in_pre_image
         .iter()
-        .filter(|(_, data)| data.storage_root != EMPTY_TRIE_HASH);
+        .filter(|(_, data)| data.storage_root != HashedPartialTrie::default().hash());
 
     let accounts_with_storage_but_no_storage_accesses = all_accounts_with_non_empty_storage
         .filter(|&(addr, _data)| !accounts_with_storage_accesses.contains(addr))
