@@ -286,13 +286,13 @@ pub struct BlockLevelData {
 pub fn entrypoint(
     trace: BlockTrace,
     other: OtherBlockData,
-    resolve: impl Fn(H256) -> Vec<u8>,
+    _resolve: impl Fn(H256) -> Vec<u8>,
 ) -> anyhow::Result<Vec<GenerationInputs>> {
     use anyhow::Context as _;
     use evm_arithmetization::generation::mpt::AccountRlp;
     use mpt_trie::partial_trie::PartialTrie as _;
 
-    use crate::processed_block_trace::{CodeHashResolving, ProcessedBlockTrace};
+    use crate::processed_block_trace::ProcessedBlockTrace;
     use crate::{
         BlockTraceTriePreImages, CombinedPreImages, SeparateStorageTriesPreImage,
         SeparateTriePreImage, SeparateTriePreImages,
@@ -344,15 +344,12 @@ pub fn entrypoint(
         })
         .collect::<Vec<_>>();
 
-    let mut code_hash_resolver = CodeHashResolving {
-        client_code_hash_resolve_f: |it: &ethereum_types::H256| resolve(*it),
-        extra_code_hash_mappings: extra_code_hash_mappings
-            .into_iter()
-            .chain(code_db.unwrap_or_default()) // later keys overwrite
-            .collect(),
-    };
-
     let last_tx_idx = txn_info.len().saturating_sub(1);
+
+    let mut hash2code = extra_code_hash_mappings
+        .into_iter()
+        .chain(code_db.unwrap_or_default()) // later keys overwrite
+        .collect();
 
     let txn_info = txn_info
         .into_iter()
@@ -374,7 +371,7 @@ pub fn entrypoint(
             t.into_processed_txn_info(
                 &all_accounts_in_pre_images,
                 &extra_state_accesses,
-                &mut code_hash_resolver,
+                &mut hash2code,
             )
         })
         .collect::<Vec<_>>();

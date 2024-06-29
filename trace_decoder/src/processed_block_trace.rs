@@ -37,37 +37,15 @@ pub(crate) struct ProcessedTxnInfo {
     pub meta: TxnMetaState,
 }
 
-pub(crate) struct CodeHashResolving<F> {
-    /// If we have not seen this code hash before, use the resolve function that
-    /// the client passes down to us. This will likely be an rpc call/cache
-    /// check.
-    pub client_code_hash_resolve_f: F,
-
-    /// Code hash mappings that we have constructed from parsing the block
-    /// trace. If there are any txns that create contracts, then they will also
-    /// get added here as we process the deltas.
-    pub extra_code_hash_mappings: HashMap<H256, Vec<u8>>,
-}
-
-impl<F: Fn(&H256) -> Vec<u8>> CodeHashResolving<F> {
-    fn resolve(&mut self, c_hash: &H256) -> Vec<u8> {
-        match self.extra_code_hash_mappings.get(c_hash) {
-            Some(code) => code.clone(),
-            None => (self.client_code_hash_resolve_f)(c_hash),
-        }
-    }
-
-    fn insert_code(&mut self, c_hash: H256, code: Vec<u8>) {
-        self.extra_code_hash_mappings.insert(c_hash, code);
-    }
-}
-
 impl TxnInfo {
-    pub(crate) fn into_processed_txn_info<F: Fn(&H256) -> Vec<u8>>(
+    pub(crate) fn into_processed_txn_info(
         self,
         all_accounts_in_pre_image: &[(H256, AccountRlp)],
         extra_state_accesses: &[H256],
-        code_hash_resolver: &mut CodeHashResolving<F>,
+        // Code hash mappings that we have constructed from parsing the block
+        // trace. If there are any txns that create contracts, then they will also
+        // get added here as we process the deltas.
+        hash2code: &mut HashMap<H256, Vec<u8>>,
     ) -> ProcessedTxnInfo {
         let mut nodes_used_by_txn = NodesUsedByTxn::default();
         let mut contract_code_accessed = create_empty_code_access_map();
@@ -128,13 +106,13 @@ impl TxnInfo {
                     ContractCodeUsage::Read(c_hash) => {
                         contract_code_accessed
                             .entry(c_hash)
-                            .or_insert_with(|| code_hash_resolver.resolve(&c_hash));
+                            .or_insert_with(|| hash2code.get(&c_hash).cloned().unwrap());
                     }
                     ContractCodeUsage::Write(c_bytes) => {
                         let c_hash = hash(&c_bytes);
 
                         contract_code_accessed.insert(c_hash, c_bytes.clone());
-                        code_hash_resolver.insert_code(c_hash, c_bytes);
+                        hash2code.insert(c_hash, c_bytes);
                     }
                 }
             }
