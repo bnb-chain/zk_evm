@@ -18,19 +18,6 @@ use crate::wire::{Instruction, SmtLeaf, SmtLeafType};
 
 type SmtTrie = smt_trie::smt::Smt<smt_trie::db::MemoryDb>;
 
-fn foo(
-    mut it: SmtTrie,
-    set_key: smt_trie::smt::Key,
-    value: ethereum_types::U256,
-    set_hash_key: smt_trie::bits::Bits,
-    // hash: smt_trie::smt::HashOut,
-    hash: plonky2::hash::hash_types::HashOut<plonky2::field::goldilocks_field::GoldilocksField>,
-) {
-    it.set_hash(set_hash_key, hash); // first
-    it.set(set_key, value);
-    it.get(set_key);
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct CollatedLeaf {
     pub balance: Option<ethereum_types::U256>,

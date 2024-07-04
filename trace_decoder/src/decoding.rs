@@ -216,74 +216,71 @@ struct TrieDeltaApplicationOutput {
     additional_storage_trie_paths_to_not_hash: HashMap<H256, Vec<Nibbles>>,
 }
 
-impl crate::ProcessedBlockTrace {
-    pub fn into_txn_proof_gen_ir(
-        self,
-        other_data: OtherBlockData,
-    ) -> TraceParsingResult<Vec<GenerationInputs>> {
-        let mut curr_block_tries = PartialTrieState {
-            state: self.state.clone(),
-            storage: self.storage.clone(),
-            ..Default::default()
-        };
+pub fn backend(
+    state: HashedPartialTrie,
+    storage: HashMap<H256, HashedPartialTrie>,
+    txn_info: Vec<ProcessedTxnInfo>,
+    withdrawals: Vec<(Address, U256)>,
+    other_data: OtherBlockData,
+) -> TraceParsingResult<Vec<GenerationInputs>> {
+    let mut curr_block_tries = PartialTrieState {
+        state: state.clone(),
+        storage: storage.clone(),
+        ..Default::default()
+    };
 
-        // This is just a copy of `curr_block_tries`.
-        let initial_tries_for_dummies = PartialTrieState {
-            state: self.state,
-            storage: self.storage,
-            ..Default::default()
-        };
+    // This is just a copy of `curr_block_tries`.
+    let initial_tries_for_dummies = PartialTrieState {
+        state,
+        storage,
+        ..Default::default()
+    };
 
-        let mut extra_data = ExtraBlockData {
-            checkpoint_state_trie_root: other_data.checkpoint_state_trie_root,
-            txn_number_before: U256::zero(),
-            txn_number_after: U256::zero(),
-            gas_used_before: U256::zero(),
-            gas_used_after: U256::zero(),
-        };
+    let mut extra_data = ExtraBlockData {
+        checkpoint_state_trie_root: other_data.checkpoint_state_trie_root,
+        ..Default::default()
+    };
 
-        // A copy of the initial extra_data possibly needed during padding.
-        let extra_data_for_dummies = extra_data.clone();
+    // A copy of the initial extra_data possibly needed during padding.
+    let extra_data_for_dummies = extra_data.clone();
 
-        let mut txn_gen_inputs = self
-            .txn_info
-            .into_iter()
-            .enumerate()
-            .map(|(txn_idx, txn_info)| {
-                process_txn_info(
-                    txn_idx,
-                    txn_info,
-                    &mut curr_block_tries,
-                    &mut extra_data,
-                    &other_data,
-                )
-                .map_err(|mut e| {
-                    e.txn_idx(txn_idx);
-                    e
-                })
-            })
-            .collect::<TraceParsingResult<Vec<_>>>()
+    let mut txn_gen_inputs = txn_info
+        .into_iter()
+        .enumerate()
+        .map(|(txn_idx, txn_info)| {
+            process_txn_info(
+                txn_idx,
+                txn_info,
+                &mut curr_block_tries,
+                &mut extra_data,
+                &other_data,
+            )
             .map_err(|mut e| {
-                e.block_num(other_data.b_data.b_meta.block_number);
-                e.block_chain_id(other_data.b_data.b_meta.block_chain_id);
+                e.txn_idx(txn_idx);
                 e
-            })?;
+            })
+        })
+        .collect::<TraceParsingResult<Vec<_>>>()
+        .map_err(|mut e| {
+            e.block_num(other_data.b_data.b_meta.block_number);
+            e.block_chain_id(other_data.b_data.b_meta.block_chain_id);
+            e
+        })?;
 
-        pad_gen_inputs_with_dummy_inputs_if_needed(
-            &mut txn_gen_inputs,
-            &other_data,
-            &extra_data,
-            &extra_data_for_dummies,
-            &initial_tries_for_dummies,
-            &curr_block_tries,
-        );
+    pad_gen_inputs_with_dummy_inputs_if_needed(
+        &mut txn_gen_inputs,
+        &other_data,
+        &extra_data,
+        &extra_data_for_dummies,
+        &initial_tries_for_dummies,
+        &curr_block_tries,
+    );
 
-        if !self.withdrawals.is_empty() {
-            add_withdrawals_to_txns(&mut txn_gen_inputs, &mut curr_block_tries, self.withdrawals)?;
-        }
-
-        Ok(txn_gen_inputs)
+    if !withdrawals.is_empty() {
+        add_withdrawals_to_txns(&mut txn_gen_inputs, &mut curr_block_tries, withdrawals)?;
     }
+
+    Ok(txn_gen_inputs)
 }
 
 fn update_txn_and_receipt_tries(

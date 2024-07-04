@@ -329,8 +329,7 @@ pub fn entrypoint2(
                     .map(|it| it.into_vec())
                     .chain(out_band_code.into_values()),
                 &accounts,
-            )
-            .collect::<Vec<_>>();
+            )?;
         }
     };
     todo!()
@@ -391,19 +390,18 @@ pub fn entrypoint(
         })
         .collect::<Result<_, _>>()?;
 
-    Ok(ProcessedBlockTrace {
-        txn_info: txn_infos(
+    Ok(decoding::backend(
+        state,
+        storage,
+        txn_infos(
             txn_info,
             &other.b_data.withdrawals,
             in_band_code.into_iter().chain(out_band_code.into_values()), // later keys overwrite
             &accounts,
-        )
-        .collect(),
-        withdrawals: other.b_data.withdrawals.clone(),
-        state,
-        storage,
-    }
-    .into_txn_proof_gen_ir(other)?)
+        )?,
+        other.b_data.withdrawals.clone(),
+        other,
+    )?)
 }
 
 fn txn_infos<'a>(
@@ -411,7 +409,7 @@ fn txn_infos<'a>(
     withdrawals: &'a [(Address, U256)],
     code: impl IntoIterator<Item = Vec<u8>>,
     accounts: &'a HashMap<H256, AccountRlp>,
-) -> impl Iterator<Item = processed_block_trace::ProcessedTxnInfo> + 'a {
+) -> anyhow::Result<Vec<processed_block_trace::ProcessedTxnInfo>> {
     let mut hash2code = code.into_iter().map(|code| (hash(&code), code)).collect();
     update_last(
         txn_info.into_iter().map(|it| (it, Vec::new())),
@@ -425,6 +423,7 @@ fn txn_infos<'a>(
         },
     )
     .map(move |(info, xtra)| processed_block_trace::process(info, accounts, &xtra, &mut hash2code))
+    .collect()
 }
 
 fn update_last<T>(
@@ -442,14 +441,6 @@ fn update_last<T>(
                 it
             }
         })
-}
-
-#[derive(Debug)]
-struct ProcessedBlockTrace {
-    state: HashedPartialTrie,
-    storage: HashMap<H256, HashedPartialTrie>,
-    txn_info: Vec<processed_block_trace::ProcessedTxnInfo>,
-    withdrawals: Vec<(Address, U256)>,
 }
 
 /// Like `#[serde(with = "hex")`, but tolerates and emits leading `0x` prefixes

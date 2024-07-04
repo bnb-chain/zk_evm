@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
+use anyhow::Context;
 use ethereum_types::{H256, U256};
 use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
 use mpt_trie::nibbles::Nibbles;
@@ -52,7 +53,7 @@ pub fn process(
     // trace. If there are any txns that create contracts, then they will also
     // get added here as we process the deltas.
     hash2code: &mut HashMap<H256, Vec<u8>>,
-) -> ProcessedTxnInfo {
+) -> anyhow::Result<ProcessedTxnInfo> {
     let mut nodes_used_by_txn = NodesUsedByTxn::default();
     let mut contract_code_accessed = HashMap::from([(hash([]), Vec::new())]);
 
@@ -162,7 +163,7 @@ pub fn process(
         gas_used,
     } = meta;
 
-    ProcessedTxnInfo {
+    Ok(ProcessedTxnInfo {
         nodes_used_by_txn,
         contract_code_accessed,
         meta: TxnMetaState {
@@ -171,16 +172,14 @@ pub fn process(
                 true => None,
             },
             receipt_node_bytes: {
-                let raw_bytes = new_receipt_trie_node_byte;
-                match rlp::decode::<LegacyReceiptRlp>(&raw_bytes) {
-                    Ok(_) => raw_bytes,
-                    Err(_) => {
-                        // Must be non-legacy then.
-                        rlp::decode::<Vec<u8>>(&raw_bytes).unwrap()
-                    }
+                match rlp::decode::<LegacyReceiptRlp>(&new_receipt_trie_node_byte).is_ok() {
+                    true => new_receipt_trie_node_byte,
+                    false => rlp::decode(&new_receipt_trie_node_byte).context(
+                        "couldn't decode bytes as a legacy receipt or as a vector of bytes",
+                    )?,
                 }
             },
             gas_used,
         },
-    }
+    })
 }
