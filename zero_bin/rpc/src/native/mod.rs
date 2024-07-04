@@ -56,7 +56,7 @@ where
 
     Ok(BlockTrace {
         txn_info,
-        code_db: Option::from(code_db).filter(|x| !x.is_empty()),
+        code_db,
         trie_pre_images,
     })
 }

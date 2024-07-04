@@ -80,8 +80,8 @@ const _DEVELOPER_DOCS: () = ();
 /// Defines the main functions used to generate the IR.
 mod decoding;
 // TODO(0xaatif): add backend/prod support
-#[cfg(test)]
-#[allow(dead_code)]
+// #[cfg(test)]
+// #[allow(dead_code)]
 mod hermez_cdk_erigon;
 /// Defines functions that processes a [BlockTrace] so that it is easier to turn
 /// the block transactions into IRs.
@@ -91,9 +91,12 @@ mod zero_jerigon;
 
 use std::collections::HashMap;
 
+use anyhow::{bail, Context as _};
 use ethereum_types::{Address, U256};
+use evm_arithmetization::generation::mpt::AccountRlp;
 use evm_arithmetization::proof::{BlockHashes, BlockMetadata};
 use evm_arithmetization::GenerationInputs;
+use itertools::Itertools;
 use keccak_hash::keccak as hash;
 use keccak_hash::H256;
 use mpt_trie::partial_trie::HashedPartialTrie;
@@ -114,7 +117,8 @@ pub struct BlockTrace {
 
     /// The code_db is a map of code hashes to the actual code. This is needed
     /// to execute transactions.
-    pub code_db: Option<HashMap<H256, Vec<u8>>>,
+    #[serde(default)]
+    pub code_db: HashMap<H256, Vec<u8>>,
 
     /// Traces and other info per transaction. The index of the transaction
     /// within the block corresponds to the slot in this vec.
@@ -269,27 +273,84 @@ pub struct BlockLevelData {
     pub withdrawals: Vec<(Address, U256)>,
 }
 
+pub fn entrypoint2(
+    trace: BlockTrace,
+    other: OtherBlockData,
+) -> anyhow::Result<Vec<GenerationInputs>> {
+    use evm_arithmetization::generation::mpt::AccountRlp;
+    use hermez_cdk_erigon::CollatedLeaf;
+
+    let BlockTrace {
+        trie_pre_images,
+        code_db: out_band_code,
+        txn_info,
+    } = trace;
+    match trie_pre_images {
+        BlockTraceTriePreImages::Separate(_) => bail!("TODO(0xaatif)"),
+        BlockTraceTriePreImages::Combined(CombinedPreImages { compact }) => {
+            let instructions =
+                wire::parse(&compact).context("couldn't parse instructions from binary format")?;
+            let hermez_cdk_erigon::Frontend {
+                trie,
+                code: in_band_code,
+                collation,
+            } = hermez_cdk_erigon::frontend(instructions)
+                .context("couldn't execute instructions")?;
+            let accounts = collation
+                .into_iter()
+                .map(
+                    |(
+                        k,
+                        CollatedLeaf {
+                            balance,
+                            nonce,
+                            code_hash,
+                            storage_root,
+                        },
+                    )| {
+                        (
+                            hash(k), // TODO(0xaatif): is this even the right thing to do?
+                            AccountRlp {
+                                nonce: nonce.unwrap_or_default(),
+                                balance: balance.unwrap_or_default(),
+                                storage_root: storage_root.unwrap_or_default(),
+                                code_hash: code_hash.unwrap_or_default(),
+                            },
+                        )
+                    },
+                )
+                .collect();
+
+            let txn_infos = txn_infos(
+                txn_info,
+                &other.b_data.withdrawals,
+                in_band_code
+                    .into_iter()
+                    .map(|it| it.into_vec())
+                    .chain(out_band_code.into_values()),
+                &accounts,
+            )
+            .collect::<Vec<_>>();
+        }
+    };
+    todo!()
+}
+
 pub fn entrypoint(
     trace: BlockTrace,
     other: OtherBlockData,
     _resolve: impl Fn(H256) -> Vec<u8>,
 ) -> anyhow::Result<Vec<GenerationInputs>> {
-    use anyhow::Context as _;
     use evm_arithmetization::generation::mpt::AccountRlp;
     use mpt_trie::partial_trie::PartialTrie as _;
 
-    use crate::{
-        BlockTraceTriePreImages, CombinedPreImages, SeparateStorageTriesPreImage,
-        SeparateTriePreImage, SeparateTriePreImages,
-    };
-
     let BlockTrace {
         trie_pre_images,
-        code_db,
+        code_db: out_band_code,
         txn_info,
     } = trace;
 
-    let (state, storage, extra_code_hash_mappings) = match trie_pre_images {
+    let (state, storage, in_band_code) = match trie_pre_images {
         BlockTraceTriePreImages::Separate(SeparateTriePreImages {
             state: SeparateTriePreImage::Direct(state),
             storage: SeparateStorageTriesPreImage::MultipleTries(storage),
@@ -299,7 +360,7 @@ pub fn entrypoint(
                 .into_iter()
                 .map(|(k, SeparateTriePreImage::Direct(v))| (k, v))
                 .collect::<HashMap<_, _>>(),
-            HashMap::new(),
+            vec![],
         ),
         BlockTraceTriePreImages::Combined(CombinedPreImages { compact }) => {
             let instructions =
@@ -313,62 +374,74 @@ pub fn entrypoint(
                 (
                     state,
                     storage.into_iter().collect(),
-                    code.into_iter()
-                        .map(|it| (crate::hash(&it), it.into_vec()))
-                        .collect(),
+                    code.into_iter().map(|it| it.into_vec()).collect(),
                 )
             }
         }
     };
 
-    let all_accounts_in_pre_images = state
+    let accounts = state
         .items()
-        .filter_map(|(addr, data)| {
-            data.as_val()
-                .map(|data| (addr.into(), rlp::decode::<AccountRlp>(data).unwrap()))
-        })
-        .collect::<Vec<_>>();
-
-    let last_tx_idx = txn_info.len().saturating_sub(1);
-
-    let mut hash2code = extra_code_hash_mappings
-        .into_iter()
-        .chain(code_db.unwrap_or_default()) // later keys overwrite
-        .collect();
-
-    let txn_info = txn_info
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let extra_state_accesses = if last_tx_idx == i {
-                // If this is the last transaction, we mark the withdrawal addresses
-                // as accessed in the state trie.
-                other
-                    .b_data
-                    .withdrawals
-                    .iter()
-                    .map(|(addr, _)| crate::hash(addr.as_bytes()))
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            };
-
-            processed_block_trace::process(
-                t,
-                &all_accounts_in_pre_images,
-                &extra_state_accesses,
-                &mut hash2code,
+        .filter_map(|(address, leaf)| {
+            Some(
+                rlp::decode::<AccountRlp>(leaf.as_val()?)
+                    .context("expected `state` trie value leaves to consist only of AccountRlp")
+                    .map(|account| (H256::from(address), account)),
             )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<_, _>>()?;
 
     Ok(ProcessedBlockTrace {
-        txn_info,
+        txn_info: txn_infos(
+            txn_info,
+            &other.b_data.withdrawals,
+            in_band_code.into_iter().chain(out_band_code.into_values()), // later keys overwrite
+            &accounts,
+        )
+        .collect(),
         withdrawals: other.b_data.withdrawals.clone(),
         state,
         storage,
     }
     .into_txn_proof_gen_ir(other)?)
+}
+
+fn txn_infos<'a>(
+    txn_info: Vec<TxnInfo>,
+    withdrawals: &'a [(Address, U256)],
+    code: impl IntoIterator<Item = Vec<u8>>,
+    accounts: &'a HashMap<H256, AccountRlp>,
+) -> impl Iterator<Item = processed_block_trace::ProcessedTxnInfo> + 'a {
+    let mut hash2code = code.into_iter().map(|code| (hash(&code), code)).collect();
+    update_last(
+        txn_info.into_iter().map(|it| (it, Vec::new())),
+        |(_, xtra)| {
+            // If this is the last transaction, we mark the withdrawal addresses
+            // as accessed in the state trie.
+            *xtra = withdrawals
+                .iter()
+                .map(|(addr, _)| crate::hash(addr.as_bytes()))
+                .collect();
+        },
+    )
+    .map(move |(info, xtra)| processed_block_trace::process(info, accounts, &xtra, &mut hash2code))
+}
+
+fn update_last<T>(
+    it: impl IntoIterator<Item = T>,
+    f: impl FnOnce(&mut T),
+) -> impl Iterator<Item = T> {
+    use itertools::Position;
+    let mut f = Some(f);
+    it.into_iter()
+        .with_position()
+        .map(move |(pos, mut it)| match pos {
+            Position::First | Position::Middle => it,
+            Position::Last | Position::Only => {
+                (f.take().unwrap())(&mut it);
+                it
+            }
+        })
 }
 
 #[derive(Debug)]

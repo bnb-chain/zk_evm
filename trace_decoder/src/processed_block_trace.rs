@@ -46,7 +46,7 @@ pub(crate) struct TxnMetaState {
 }
 pub fn process(
     TxnInfo { traces, meta }: TxnInfo,
-    all_accounts_in_pre_image: &[(H256, AccountRlp)],
+    accounts_before_block: &HashMap<H256, AccountRlp>,
     extra_state_accesses: &[H256],
     // Code hash mappings that we have constructed from parsing the block
     // trace. If there are any txns that create contracts, then they will also
@@ -130,7 +130,7 @@ pub fn process(
             }
         }
 
-        if self_destructed.map_or(false, |self_destructed| self_destructed) {
+        if self_destructed.unwrap_or_default() {
             nodes_used_by_txn.self_destructed_accounts.push(hashed_addr);
         }
     }
@@ -139,25 +139,22 @@ pub fn process(
         nodes_used_by_txn.state_accesses.push(hashed_addr);
     }
 
-    let accounts_with_storage_accesses = HashSet::<_>::from_iter(
-        nodes_used_by_txn
-            .storage_accesses
-            .iter()
-            .filter(|(_, slots)| !slots.is_empty())
-            .map(|(addr, _)| *addr),
-    );
-
-    let all_accounts_with_non_empty_storage = all_accounts_in_pre_image
+    let accounts_with_storage_accesses = nodes_used_by_txn
+        .storage_accesses
         .iter()
-        .filter(|(_, data)| data.storage_root != HashedPartialTrie::default().hash());
-
-    let accounts_with_storage_but_no_storage_accesses = all_accounts_with_non_empty_storage
-        .filter(|&(addr, _data)| !accounts_with_storage_accesses.contains(addr))
-        .map(|(addr, data)| (*addr, data.storage_root));
+        .filter(|(_, slots)| !slots.is_empty())
+        .map(|(addr, _)| *addr)
+        .collect::<HashSet<_>>();
 
     nodes_used_by_txn
         .state_accounts_with_no_accesses_but_storage_tries
-        .extend(accounts_with_storage_but_no_storage_accesses);
+        .extend(
+            accounts_before_block
+                .iter()
+                .filter(|(_, data)| data.storage_root != HashedPartialTrie::default().hash())
+                .filter(|&(addr, _data)| !accounts_with_storage_accesses.contains(addr))
+                .map(|(addr, data)| (*addr, data.storage_root)),
+        );
 
     let TxnMeta {
         byte_code,
