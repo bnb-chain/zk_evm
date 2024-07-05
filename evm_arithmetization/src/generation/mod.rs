@@ -127,6 +127,8 @@ pub(crate) struct TrimmedGenerationInputs {
     /// The hash of the current block, and a list of the 256 previous block
     /// hashes.
     pub(crate) block_hashes: BlockHashes,
+
+    pub(crate) tries: TrieInputs,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
@@ -167,6 +169,7 @@ impl GenerationInputs {
             contract_code: self.contract_code.clone(),
             block_metadata: self.block_metadata.clone(),
             block_hashes: self.block_hashes.clone(),
+            tries: self.tries.clone()
         }
     }
 }
@@ -382,35 +385,6 @@ pub fn generate_traces<F: RichField + Extendable<D>, const D: usize>(
 
     initialize_kernel_code_and_shift_table(&mut segment_data.memory);
 
-    log::info!(
-        "Trace lengths (before padding): {:?}",
-        state.traces.get_lengths()
-    );
-    let final_state_trie: HashedPartialTrie = get_state_trie(
-        &state.memory,
-        u256_to_usize(
-            state
-                .memory
-                .read_global_metadata(GlobalMetadata::StateTrieRoot),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    log::debug!("Final state trie: {:?}", final_state_trie);
-    log::debug!("Final state trie hash: {:?}", final_state_trie.hash());
-    log::debug!(
-        "Final accounts linked list: {:?}",
-        state.get_accounts_linked_list()
-    );
-    log::debug!(
-        "Final storage linked list: {:?}",
-        state.get_storage_linked_list()
-    );
-
-    if cpu_res.is_err() {
-        let _ = output_debug_tries(&state);
-    }
-    cpu_res?;
     // Retrieve initial memory addresses and values.
     let actual_mem_before = get_all_memory_address_and_values(&segment_data.memory);
 
@@ -439,6 +413,32 @@ pub fn generate_traces<F: RichField + Extendable<D>, const D: usize>(
         "simulate CPU",
         simulate_cpu(&mut state, *max_cpu_len_log, *is_dummy)
     );
+
+    log::info!(
+        "Trace lengths (before padding): {:?}",
+        state.traces.get_lengths()
+    );
+    let final_state_trie: HashedPartialTrie = get_state_trie(
+        &state.memory,
+        u256_to_usize(
+            state
+                .memory
+                .read_global_metadata(GlobalMetadata::StateTrieRoot),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    log::debug!("Final state trie: {:?}", final_state_trie);
+    log::debug!("Final state trie hash: {:?}", final_state_trie.hash());
+    log::debug!(
+        "Final accounts linked list: {:?}",
+        state.get_accounts_linked_list()
+    );
+    log::debug!(
+        "Final storage linked list: {:?}",
+        state.get_storage_linked_list()
+    );
+
     if cpu_res.is_err() {
         output_debug_tries(&state)?;
         cpu_res?;
