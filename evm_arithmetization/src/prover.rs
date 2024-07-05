@@ -686,15 +686,7 @@ pub mod testing {
 
         let mut proofs = Vec::with_capacity(data.len());
         for mut d in data {
-            let proof = prove(
-                all_stark,
-                config,
-                inputs.clone(),
-                &mut d,
-                timing,
-                abort_signal.clone(),
-            )?;
-            proofs.push(proof);
+            let proof = generate_traces::<F, D>(all_stark, &inputs, config, &mut d, timing)?;
         }
 
         Ok(proofs)

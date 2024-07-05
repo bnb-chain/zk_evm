@@ -141,41 +141,12 @@ impl<T: Copy> Traces<T> {
             keccak_sponge_ops,
         } = self;
 
-        let arithmetic_trace = timed!(
-            timing,
-            "generate arithmetic trace",
-            all_stark.arithmetic_stark.generate_trace(arithmetic_ops)
-        );
-        let byte_packing_trace = timed!(
-            timing,
-            "generate byte packing trace",
-            all_stark
-                .byte_packing_stark
-                .generate_trace(byte_packing_ops, cap_elements, timing)
-        );
-        let cpu_rows = cpu.into_iter().map(|x| x.into()).collect();
-        let cpu_trace = trace_rows_to_poly_values(cpu_rows);
-        let keccak_trace = timed!(
-            timing,
-            "generate Keccak trace",
-            all_stark
-                .keccak_stark
-                .generate_trace(keccak_inputs, cap_elements, timing)
-        );
-        let keccak_sponge_trace = timed!(
-            timing,
-            "generate Keccak sponge trace",
-            all_stark
-                .keccak_sponge_stark
-                .generate_trace(keccak_sponge_ops, cap_elements, timing)
-        );
-        let logic_trace = timed!(
-            timing,
-            "generate logic trace",
-            all_stark
-                .logic_stark
-                .generate_trace(logic_ops, cap_elements, timing)
-        );
+        let arithmetic_trace = vec![];
+        let byte_packing_trace = vec![];
+        let cpu_trace = vec![];
+        let keccak_trace = vec![];
+        let keccak_sponge_trace = vec![];
+        let logic_trace = vec![];
         let (memory_trace, final_values, unpadded_memory_length) = timed!(
             timing,
             "generate memory trace",
