@@ -17,6 +17,7 @@ ethereum-types = { workspace = true }
 hex = { workspace = true }
 keccak-hash = { workspace = true }
 log = { workspace = true }
+plonky2 = { workspace = true }
 rlp = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
