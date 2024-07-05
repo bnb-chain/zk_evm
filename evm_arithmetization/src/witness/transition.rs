@@ -263,6 +263,18 @@ pub(crate) const fn might_overflow_op(op: Operation) -> bool {
 }
 
 pub(crate) fn log_kernel_instruction<F: Field, S: State<F>>(state: &mut S, op: Operation) {
+    let pc = state.get_registers().program_counter;
+    let is_interesting_offset = KERNEL
+        .offset_label(pc)
+        .filter(|label| label == "check_state_trie")
+        .is_some();
+    if is_interesting_offset {
+        state.log(
+            log::Level::Info,
+            format!("Hashing trie at cycle {:?}", state.get_clock(),),
+        );
+    }
+
     // The logic below is a bit costly, so skip it if debug logs aren't enabled.
     if !log_enabled!(log::Level::Debug) {
         return;

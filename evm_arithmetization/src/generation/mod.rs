@@ -495,8 +495,6 @@ fn simulate_cpu<F: Field>(
         }
     }
 
-    log::info!("CPU trace padded to {} cycles", state.traces.clock());
-
     Ok((final_registers, mem_after))
 }
 
