@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, ensure, Context as _};
 use bitvec::vec::BitVec;
 use either::Either;
-use ethereum_types::BigEndianHash as _;
+use ethereum_types::{Address, BigEndianHash as _, U256};
 use itertools::{EitherOrBoth, Itertools as _};
 use nunny::NonEmpty;
 use plonky2::field::types::Field;
@@ -18,18 +18,80 @@ use crate::wire::{Instruction, SmtLeaf, SmtLeafType};
 
 type SmtTrie = smt_trie::smt::Smt<smt_trie::db::MemoryDb>;
 
+pub struct SemanticTrie<S> {
+    pub hash2hash: HashMap<U256, U256, S>,
+    pub address2account_info: HashMap<Address, AccountInfo, S>,
+    // or should this be hash(address)? ~~^
+}
+
+impl<S> SemanticTrie<S> {
+    pub fn root_as_mpt(&self) -> U256 {
+        todo!()
+    }
+    pub fn root_as_smt(&self) -> U256 {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct CollatedLeaf {
+pub struct AccountInfo {
     pub balance: Option<ethereum_types::U256>,
     pub nonce: Option<ethereum_types::U256>,
     pub code_hash: Option<ethereum_types::H256>,
     pub storage_root: Option<ethereum_types::H256>,
 }
 
+mod apis {
+    use mpt_trie::{
+        nibbles::Nibbles,
+        partial_trie::{HashedPartialTrie, PartialTrie as _},
+    };
+    fn mpt_api(
+        mut it: HashedPartialTrie,
+        // this is a bitvec of length <= 260 (based off the comment on NibblesIntern)
+        key: Nibbles,
+        val: &[u8],
+        hash: ethereum_types::U256,
+    ) {
+        let () = it.insert(key, hash).unwrap(); // set hash
+        let () = it.insert(key, val).unwrap(); // set val
+        let _: Option<&[u8]> = it.get(key);
+        let _: ethereum_types::H256 = it.hash();
+    }
+
+    use plonky2::field::goldilocks_field::GoldilocksField;
+    use smt_trie::smt::{HashOut, Key};
+
+    type SmtTrie = smt_trie::smt::Smt<smt_trie::db::MemoryDb>;
+
+    fn smt_api(
+        mut it: SmtTrie,
+
+        // this is basically U256
+        set_key @ Key(
+            [GoldilocksField(k1), GoldilocksField(k2), GoldilocksField(k3), GoldilocksField(k4)],
+        ): smt_trie::smt::Key,
+        set_val: ethereum_types::U256,
+
+        // this is a bitvec of length <= 256
+        set_hash_key: smt_trie::bits::Bits,
+        // this is basically U256
+        set_hash_val @ HashOut {
+            elements:
+                [GoldilocksField(h1), GoldilocksField(h2), GoldilocksField(h3), GoldilocksField(h4)],
+        }: smt_trie::smt::HashOut,
+    ) {
+        let () = it.set_hash(set_hash_key, set_hash_val); // set hash
+        let () = it.set(set_key, set_val); // set val
+        let _: ethereum_types::U256 = it.get(set_key); // 0 on empty
+        let _: smt_trie::smt::HashOut = it.root;
+    }
+}
+
 pub struct Frontend {
     pub trie: SmtTrie,
     pub code: HashSet<NonEmpty<Vec<u8>>>,
-    pub collation: HashMap<ethereum_types::Address, CollatedLeaf>,
+    pub collation: HashMap<ethereum_types::Address, AccountInfo>,
 }
 
 /// # Panics
@@ -130,7 +192,7 @@ fn fold1(instructions: impl IntoIterator<Item = Instruction>) -> anyhow::Result<
 /// - [`SmtTrie`] panics internally.
 fn node2trie(
     node: Node,
-) -> anyhow::Result<(SmtTrie, HashMap<ethereum_types::Address, CollatedLeaf>)> {
+) -> anyhow::Result<(SmtTrie, HashMap<ethereum_types::Address, AccountInfo>)> {
     let mut trie = SmtTrie::default();
 
     let (hashes, leaves) =
@@ -153,7 +215,7 @@ fn node2trie(
         )
     }
 
-    let mut collated = HashMap::<ethereum_types::Address, CollatedLeaf>::new();
+    let mut collated = HashMap::<ethereum_types::Address, AccountInfo>::new();
     for SmtLeaf {
         node_type,
         address,

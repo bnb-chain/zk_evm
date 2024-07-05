@@ -278,7 +278,7 @@ pub fn entrypoint2(
     other: OtherBlockData,
 ) -> anyhow::Result<Vec<GenerationInputs>> {
     use evm_arithmetization::generation::mpt::AccountRlp;
-    use hermez_cdk_erigon::CollatedLeaf;
+    use hermez_cdk_erigon::AccountInfo;
 
     let BlockTrace {
         trie_pre_images,
@@ -301,7 +301,7 @@ pub fn entrypoint2(
                 .map(
                     |(
                         k,
-                        CollatedLeaf {
+                        AccountInfo {
                             balance,
                             nonce,
                             code_hash,
