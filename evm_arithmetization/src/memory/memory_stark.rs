@@ -204,6 +204,13 @@ impl<F: RichField + Extendable<D>, const D: usize> MemoryStark<F, D> {
     ) -> (Vec<[F; NUM_COLUMNS]>, usize) {
         // fill_gaps expects an ordered list of operations.
         memory_ops.sort_by_key(MemoryOp::sorting_key);
+        log::info!(
+            "Memory data: {:?}",
+            memory_ops
+                .iter()
+                .map(|op| (op.address.context == 0, op.address.segment))
+                .counts()
+        );
         Self::fill_gaps(&mut memory_ops);
 
         let unpadded_length = memory_ops.len();
