@@ -167,6 +167,7 @@ global perform_final_checks:
     %mstore_global_metadata(@GLOBAL_METADATA_STATE_TRIE_ROOT)
     %set_initial_tries
     %get_trie_data_size
+global check_initial_state_trie:
     %mpt_hash_state_trie
 
     SWAP1 %set_trie_data_size
