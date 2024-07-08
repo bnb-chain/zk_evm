@@ -19,3 +19,44 @@
     %mload_trie_data
     // stack: storage_root_ptr
 %endmacro
+
+%macro clone_account
+    // stack: account_ptr
+    %get_trie_data_size
+    // stack: cloned_accouint_ptr
+    SWAP1
+    DUP1
+    // Balance
+    %mload_trie_data
+    %append_to_trie_data
+    %increment
+    // Nonce
+    %increment
+    DUP1
+    %mload_trie_data
+    %append_to_trie_data
+    // Storage trie root
+    %increment
+    DUP1
+    %mload_trie_data
+    %append_to_trie_data
+    // Codehash 
+    %increment
+    %mload_trie_data
+    %append_to_trie_data
+    // stack: cloned_account_ptr
+%endmacro
+
+%macro clone_slot
+    // stack: slot_ptr
+    DUP1
+    %jumpi(%%non_zero_ptr)
+    %jump(%%avoid_clonning_zero_ptr)
+%%non_zero_ptr:
+    %get_trie_data_size
+%%avoid_clonning_zero_ptr:
+    // stack: cloned_slot_ptr
+    SWAP1
+    %mload_trie_data
+    %append_to_trie_data
+%endmacro

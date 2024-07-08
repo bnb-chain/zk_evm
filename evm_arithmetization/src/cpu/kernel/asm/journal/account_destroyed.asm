@@ -45,7 +45,6 @@ revert_account_destroyed_contd:
     %read_accounts_linked_list
     // stack: target_payload_ptr, address, prev_balance, retdest
     DUP1
-global debug_sera_aca:
     %assert_nonzero
     %add_const(1)
     // stack: target_balance_ptr, address, prev_balance, retdest

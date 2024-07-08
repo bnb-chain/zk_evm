@@ -19,6 +19,7 @@ global mpt_set_payload:
     DUP1 %eq_const(@MPT_NODE_LEAF)      %jumpi(set_payload_leaf)
 
 skip:
+global debug_skip:
     // stack: node_type, after_node_type, account_ptr_ptr, storage_ptr_ptr, retdest
     %stack (node_type, after_node_type, account_ptr_ptr, storage_ptr_ptr, retdest) -> (retdest, account_ptr_ptr, storage_ptr_ptr)
     JUMP
@@ -32,17 +33,17 @@ skip:
 %macro set_initial_tries
     PUSH %%after
     PUSH @SEGMENT_STORAGE_LINKED_LIST
-    %add_const(7) // The first node is the special node, of size 5, so the first payload is at position 5 + 2.
+    %add_const(8) // The first node is the special node, of size 5, so the first payload is at position 5 + 3.
     PUSH @SEGMENT_ACCOUNTS_LINKED_LIST
-    %add_const(5) // The first node is the special node, of size 4, so the first payload is at position 4 + 1.
+    %add_const(6) // The first node is the special node, of size 4, so the first payload is at position 4 + 2.
     %mload_global_metadata(@GLOBAL_METADATA_STATE_TRIE_ROOT)
     %jump(mpt_set_payload)
 %%after:
-    // We store account_ptr_ptr - 1, i.e. a pointer to the first node not in the initial state.
-    %decrement
-    %mstore_global_metadata(@GLOBAL_METADATA_INITIAL_ACCOUNTS_LINKED_LIST_LEN)
-    // We store storage_ptr_ptr - 2, i.e. a pointer to the first node not in the initial state.
+    // We store account_ptr_ptr - 2, i.e. a pointer to the first node not in the initial state.
     %sub_const(2)
+    %mstore_global_metadata(@GLOBAL_METADATA_INITIAL_ACCOUNTS_LINKED_LIST_LEN)
+    // We store storage_ptr_ptr - 3, i.e. a pointer to the first node not in the initial state.
+    %sub_const(3)
     %mstore_global_metadata(@GLOBAL_METADATA_INITIAL_STORAGE_LINKED_LIST_LEN)
 %endmacro
 
@@ -130,6 +131,7 @@ set_payload_storage_extension:
     // stack: child_ptr, account_ptr_ptr, storage_ptr_ptr, retdest
     %jump(mpt_set_storage_payload)
 
+global debug_set_payload_leaf:
 set_payload_leaf:
     // stack: node_type, after_node_type, account_ptr_ptr, storage_ptr_ptr, retdest
     POP

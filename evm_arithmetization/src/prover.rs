@@ -647,7 +647,14 @@ pub fn generate_all_data_segments<F: RichField>(
 
 /// A utility module designed to test witness generation externally.
 pub mod testing {
+    use mpt_trie::partial_trie::HashedPartialTrie;
+    use mpt_trie::partial_trie::PartialTrie;
+
     use super::*;
+    use crate::{
+        cpu::kernel::constants::global_metadata::GlobalMetadata,
+        generation::trie_extractor::get_state_trie, util::u256_to_usize,
+    };
     use crate::{
         cpu::kernel::interpreter::Interpreter,
         generation::{output_debug_tries, state::State},
@@ -661,6 +668,31 @@ pub mod testing {
         let mut interpreter: Interpreter<F> =
             Interpreter::new_with_generation_inputs(initial_offset, initial_stack, &inputs, None);
         let result = interpreter.run();
+
+        let final_state_trie: HashedPartialTrie = get_state_trie(
+            &interpreter.get_generation_state().memory,
+            u256_to_usize(
+                interpreter
+                    .get_generation_state()
+                    .memory
+                    .read_global_metadata(GlobalMetadata::StateTrieRoot),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        log::debug!("Final state trie: {:?}", final_state_trie);
+        log::debug!("Final state trie hash: {:?}", final_state_trie.hash());
+        log::debug!(
+            "Final accounts linked list: {:?}",
+            interpreter
+                .get_generation_state()
+                .get_accounts_linked_list()
+        );
+        log::debug!(
+            "Final storage linked list: {:?}",
+            interpreter.get_generation_state().get_storage_linked_list()
+        );
+
         if result.is_err() {
             output_debug_tries(interpreter.get_generation_state())?;
         }

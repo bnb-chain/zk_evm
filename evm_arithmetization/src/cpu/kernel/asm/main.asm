@@ -67,6 +67,7 @@ global main:
     // Initialize the RLP DATA pointer to its initial position, 
     // skipping over the preinitialized empty node.
     PUSH @INITIAL_TXN_RLP_ADDR
+    %add_const(@MAX_RLP_BLOB_SIZE)
     %mstore_global_metadata(@GLOBAL_METADATA_RLP_DATA_SIZE)
 
     // Encode constant nodes
@@ -80,10 +81,12 @@ global main:
     %mstore_global_metadata(@GLOBAL_METADATA_STORAGE_LINKED_LIST_LEN)
     PROVER_INPUT(trie_ptr::trie_data_size)
     %mstore_global_metadata(@GLOBAL_METADATA_TRIE_DATA_SIZE)
+
+    // Store the inital accounts and slots for hashing later
+    %store_initial_accounts
+    %store_initial_slots
    
-    // Initialize the state, transaction and receipt trie root pointers.
-    PROVER_INPUT(trie_ptr::state)
-    %mstore_global_metadata(@GLOBAL_METADATA_STATE_TRIE_ROOT)
+    // Initialize the transaction and receipt trie root pointers.
     PROVER_INPUT(trie_ptr::txn)
     %mstore_global_metadata(@GLOBAL_METADATA_TXN_TRIE_ROOT)
     PROVER_INPUT(trie_ptr::receipt)
@@ -93,13 +96,7 @@ global hash_initial_tries:
     // We compute the length of the trie data segment in `mpt_hash` so that we
     // can check the value provided by the prover.
     // The trie data segment is already written by the linked lists
-    %mload_global_metadata(@GLOBAL_METADATA_TRIE_DATA_SIZE)
-
-    %set_initial_tries
-    %mpt_hash_state_trie  %mload_global_metadata(@GLOBAL_METADATA_STATE_TRIE_DIGEST_BEFORE)
-    global debug_check_hash_after_setting_payloads:
-    %assert_eq
-
+    %get_trie_data_size
 
     // stack: trie_data_len
     %mpt_hash_txn_trie     %mload_global_metadata(@GLOBAL_METADATA_TXN_TRIE_DIGEST_BEFORE)      %assert_eq
@@ -107,7 +104,7 @@ global hash_initial_tries:
     %mpt_hash_receipt_trie %mload_global_metadata(@GLOBAL_METADATA_RECEIPT_TRIE_DIGEST_BEFORE)  %assert_eq
     // stack: trie_data_full_len
 
-    %mstore_global_metadata(@GLOBAL_METADATA_TRIE_DATA_SIZE)
+    %set_trie_data_size
 
 global start_txns:
     // stack: (empty)
@@ -159,20 +156,30 @@ global perform_final_checks:
     // stack: cum_gas, txn_counter, num_nibbles, txn_nb
     // Check that we end up with the correct `cum_gas`, `txn_nb` and bloom filter.
     %mload_global_metadata(@GLOBAL_METADATA_BLOCK_GAS_USED_AFTER) 
-global debug_check_gas:
     %assert_eq
 
     
     DUP3 %mload_global_metadata(@GLOBAL_METADATA_TXN_NUMBER_AFTER)
-global debug_check_txn_number:
     %assert_eq
     %pop3
+
+    PROVER_INPUT(trie_ptr::state)
+    %mstore_global_metadata(@GLOBAL_METADATA_STATE_TRIE_ROOT)
+    %set_initial_tries
+    %get_trie_data_size
+    %mpt_hash_state_trie
+
+    SWAP1 %set_trie_data_size
+    %mload_global_metadata(@GLOBAL_METADATA_STATE_TRIE_DIGEST_BEFORE)
+global debug_st_1:
+    %assert_eq
+
     PUSH 1 // initial trie data length
     
 global check_state_trie:
     %set_final_tries
-    %mpt_hash_state_trie   %mload_global_metadata(@GLOBAL_METADATA_STATE_TRIE_DIGEST_AFTER)     
-global debug_check_final_trie:
+    %mpt_hash_state_trie   %mload_global_metadata(@GLOBAL_METADATA_STATE_TRIE_DIGEST_AFTER)
+global debug_st_2:
     %assert_eq
 global check_txn_trie:
     %mpt_hash_txn_trie     %mload_global_metadata(@GLOBAL_METADATA_TXN_TRIE_DIGEST_AFTER)       %assert_eq

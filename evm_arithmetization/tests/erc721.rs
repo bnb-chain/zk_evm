@@ -90,24 +90,11 @@ fn test_erc721() -> anyhow::Result<()> {
             balance: owner_account.balance - gas_used * 0xa,
             ..owner_account
         };
-        log::debug!("owner_account_after = {:#?}", owner_account_after);
-        log::debug!("rlp = {:?}", rlp::encode(&owner_account_after).to_vec());
         state_trie_after.insert(owner_nibbles, rlp::encode(&owner_account_after).to_vec())?;
         let contract_account_after = AccountRlp {
             storage_root: contract_storage_after()?.hash(),
             ..contract_account()?
         };
-        let contract_rlp = vec![
-            248, 68, 128, 128, 160, 21, 52, 201, 120, 135, 151, 240, 89, 222, 226, 171, 199, 255,
-            87, 189, 219, 149, 32, 147, 208, 175, 248, 2, 82, 224, 19, 247, 121, 120, 120, 158,
-            114, 160, 108, 86, 199, 147, 155, 81, 154, 182, 112, 252, 61, 74, 85, 168, 162, 62,
-            164, 186, 205, 30, 25, 127, 235, 17, 118, 229, 147, 70, 202, 97, 137, 184,
-        ];
-        let contracto: AccountRlp = rlp::decode(&contract_rlp).unwrap();
-        log::debug!("constract_account_after = {:#?}", contract_account_after);
-        log::debug!("contracto = {:#?}", contracto);
-        log::debug!("rlp = {:?}", rlp::encode(&contract_account_after).to_vec());
-        log::debug!("contrc_storage_trie = {:#?}", contract_storage_after());
         state_trie_after.insert(
             contract_nibbles,
             rlp::encode(&contract_account_after).to_vec(),

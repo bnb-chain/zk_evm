@@ -11,7 +11,7 @@
 // The values at the respective positions are:
 // - 0: The account key
 // - 1: A ptr to the payload (the account values)
-// - 2: A counter indicating the number of times this address have been accessed.
+// - 2: A ptr to the intial payload.
 // - 3: A ptr (in segment @SEGMENT_ACCOUNTS_LINKED_LIST) to the next node in the list.
 // Initialize also an empty storage linked list (@U256_MAX)⮌
 // which is written as [@U256_MAX, _, _, _, @SEGMENT_ACCOUNTS_LINKED_LIST] in SEGMENT_ACCOUNTS_LINKED_LIST
@@ -19,7 +19,7 @@
 // - 0: The account key
 // - 1: The key
 // - 2: A ptr to the payload (the stored value)
-// - 3: A counter indicating the number of times this slot have been accessed.
+// - 3: A ptr to the inital payload.
 // - 4: A ptr (in segment @SEGMENT_ACCOUNTS_LINKED_LIST) to the next node in the list.
 global init_linked_lists:
     // stack: (empty)
@@ -62,6 +62,62 @@ global init_linked_lists:
     %jump(init_account_linked_lists)
 %%after:
 %endmacro
+
+%macro store_initial_accounts
+    PUSH %%after
+    %jump(store_initial_accounts)
+%%after:
+%endmacro
+
+/// Iterates over the inital account linked list and shallow copies
+/// the accounts, storing a pointer to the copied account in the node.
+global store_initial_accounts:
+    // stack: retdest
+
+    PUSH  @SEGMENT_ACCOUNTS_LINKED_LIST
+    %next_account
+loop_store_initial_accounts:
+    // stack: current_node_ptr
+    %get_trie_data_size
+global debug_new_ptr:
+    DUP2
+    MLOAD_GENERAL
+    // stack: current_addr, cpy_ptr, current_node_ptr, retdest
+    %eq_const(@U256_MAX)
+    %jumpi(store_initial_accounts_end)
+    DUP2
+    %increment
+    MLOAD_GENERAL
+    // stack: nonce_ptr, cpy_ptr, current_node_ptr, retdest
+    DUP1
+    %mload_trie_data // nonce
+    %append_to_trie_data
+    %increment
+    // stack: balance_ptr, cpy_ptr, current_node_ptr, retdest
+    DUP1
+    %mload_trie_data // balance
+    %append_to_trie_data
+    %increment // The storage_root_ptr is not really necessary
+    // stack: storage_root_ptr_ptr, cpy_ptr, current_node_ptr, retdest
+    DUP1
+    %mload_trie_data // storage_root_ptr
+    %append_to_trie_data
+    %increment
+    // stack: code_hash_ptr, cpy_ptr, current_node_ptr, retdest
+    %mload_trie_data // code_hash
+    %append_to_trie_data
+    // stack: cpy_ptr, current_node_ptr, retdest
+    DUP2
+    %add_const(2)
+    SWAP1
+    MSTORE_GENERAL // Store cpy_ptr
+    %next_account
+    %jump(loop_store_initial_accounts)
+
+store_initial_accounts_end:
+    %pop2
+    JUMP
+
 
 %macro insert_account_to_linked_list
     %stack (addr, ptr) -> (addr, ptr, %%after)
@@ -143,23 +199,10 @@ global account_found:
     // stack: pred_ptr, addr, payload_ptr, retdest
     // Load the the payload pointer and access counter
     %increment
-    DUP1
     MLOAD_GENERAL
-    // stack: orig_payload_ptr, pred_ptr + 1, addr, payload_ptr, retdest
-    SWAP1
-    %increment
-    DUP1
-    MLOAD_GENERAL
-    %increment
-    // stack: access_ctr + 1, access_ctr_ptr, orig_payload_ptr, addr, payload_ptr, retdest
-    SWAP1
-    DUP2
-    // stack: access_ctr + 1, access_ctr_ptr, access_ctr + 1, orig_payload_ptr, addr, payload_ptr, retdest
-    MSTORE_GENERAL
-    // stack: access_ctr + 1, orig_payload_ptr, addr, payload_ptr, retdest
-    // If access_ctr == 1 then this it's a cold access 
-    %eq_const(1)
-    %stack (cold_access, orig_payload_ptr, addr, payload_ptr, retdest) -> (retdest, cold_access, orig_payload_ptr)
+    // stack: orig_payload_ptr, addr, payload_ptr, retdest
+    // TODO: Remove the now unused cold_access
+    %stack (orig_payload_ptr, addr, payload_ptr, retdest) -> (retdest, 0, orig_payload_ptr)
     JUMP
 //DEBUG
 global insert_new_account:
@@ -200,7 +243,8 @@ global insert_new_account:
     // stack: new_ptr + 1, next_ptr, addr, payload_ptr, retdest
     %increment
     DUP1
-    PUSH 0
+    DUP5
+    %clone_account
     MSTORE_GENERAL
     %increment
     DUP1
@@ -251,22 +295,9 @@ account_found_with_overwrite:
     // stack: pred_ptr, addr, payload_ptr, retdest
     // Load the the payload pointer and access counter
     %increment
-    DUP1
-    // stack: payload_ptr_ptr, pred_ptr+1, addr, payload_ptr, retdest
-    DUP4 MSTORE_GENERAL
-    %increment
-    DUP1
-    MLOAD_GENERAL
-    %increment
-    // stack: access_ctr + 1, access_ctr_ptr, addr, payload_ptr, retdest
-    SWAP1
-    DUP2
-    // stack: access_ctr + 1, access_ctr_ptr, access_ctr + 1, addr, payload_ptr, retdest
-    MSTORE_GENERAL
-    // stack: access_ctr + 1, addr, payload_ptr, retdest
-    // If access_ctr == 1 then this it's a cold access 
-    %eq_const(1)
-    %stack (cold_access, addr, payload_ptr, retdest) -> (retdest, cold_access, payload_ptr)
+    // stack: payload_ptr_ptr, addr, payload_ptr, retdest
+    DUP3 MSTORE_GENERAL
+    %stack (addr, payload_ptr, retdest) -> (retdest, 0, payload_ptr)
     JUMP
 
 %macro search_account
@@ -370,6 +401,49 @@ global remove_account:
 // STORAGE linked list
 //
 //
+
+%macro store_initial_slots
+    PUSH %%after
+    %jump(store_initial_slots)
+%%after:
+%endmacro
+
+
+/// Iterates over the inital account linked list and shallow copies
+/// the accounts, storing a pointer to the copied account in the node.
+global store_initial_slots:
+    // stack: retdest
+
+    PUSH  @SEGMENT_STORAGE_LINKED_LIST
+    %next_slot
+
+loop_store_initial_slots:
+    // stack: current_node_ptr
+    %get_trie_data_size
+    DUP2
+    MLOAD_GENERAL
+    // stack: current_addr, cpy_ptr, current_node_ptr, retdest
+    %eq_const(@U256_MAX)
+    %jumpi(store_initial_slots_end)
+    DUP2
+    %add_const(2)
+    MLOAD_GENERAL
+    // stack: payload_ptr, cpy_ptr, current_node_ptr, retdest
+    %mload_trie_data
+    %append_to_trie_data
+    // stack: cpy_ptr, current_node_ptr, retdest
+    DUP2
+    %add_const(3)
+    SWAP1
+global store_cpy_ptr:
+    MSTORE_GENERAL // Store cpy_ptr
+    %next_slot
+    %jump(loop_store_initial_slots)
+
+store_initial_slots_end:
+    %pop2
+    JUMP
+
 
 %macro insert_slot
     %stack (addr, key, ptr) -> (addr, key, ptr, %%after)
@@ -498,7 +572,6 @@ next_node_ok_with_value:
     // Write the address in the new node
     DUP1
     DUP4
-global debug_yo_no_me_llamo_javier_with_value:
     MSTORE_GENERAL
     // stack: new_ptr, next_ptr, addr, key, value, retdest
     // Write the key in the new node
@@ -517,10 +590,11 @@ global debug_yo_no_me_llamo_javier_with_value:
     MSTORE_GENERAL
 
     // stack: new_ptr + 2, next_ptr, addr, key, new_payload_ptr, retdest
-    // Store the counter
+    // Store the payload ptr copy
     %increment
     DUP1
-    PUSH 0
+    DUP6
+    %clone_slot
     MSTORE_GENERAL
     // stack: new_ptr + 3, next_ptr, addr, key, new_payload_ptr, retdest
     %increment
@@ -616,26 +690,11 @@ slot_found_write:
     DUP1
     MLOAD_GENERAL
     // stack: orig_payload_ptr, pred_ptr + 2, addr, key, payload_ptr, retdest
-    DUP2
-    DUP6
-global debug_store_new_payload:
+    SWAP1
+    DUP5
     MSTORE_GENERAL // Store the new payload
-
-    SWAP1
-    %increment
-    DUP1
-    MLOAD_GENERAL
-    %increment
-    // stack: access_ctr + 1, access_ctr_ptr, orig_payload_ptr, addr, key, payload_ptr, retdest
-    SWAP1
-    DUP2
-    // stack: access_ctr + 1, access_ctr_ptr, access_ctr + 1, orig_payload_ptr, addr, key, payload_ptr, retdest
-global debug_no_me_llamo_popotan:
-    MSTORE_GENERAL
-    // stack: access_ctr + 1, orig_payload_ptr, addr, key, payload_ptr, retdest
-    // If access_ctr == 1 then this it's a cold access 
-    %eq_const(1)
-    %stack (cold_access, orig_payload_ptr, addr, key, payload_ptr, retdest) -> (retdest, cold_access, orig_payload_ptr)
+    // TODO: remove the unused cold access
+    %stack (orig_payload_ptr, addr, key, payload_ptr, retdest) -> (retdest, 0, orig_payload_ptr)
     JUMP
 insert_new_slot:
     // stack: pred_addr or pred_key, pred_ptr, addr, key, payload_ptr, retdest
@@ -685,7 +744,6 @@ next_node_ok:
     // Write the address in the new node
     DUP1
     DUP4
-global debug_yo_no_me_llamo_javier:
     MSTORE_GENERAL
     // stack: new_ptr, next_ptr, addr, key, payload_ptr, retdest
     // Write the key in the new node
@@ -701,10 +759,11 @@ global debug_yo_no_me_llamo_javier:
     MSTORE_GENERAL
 
     // stack: new_ptr + 2, next_ptr, addr, key, payload_ptr, retdest
-    // Store the counter
+    // Store the copy of payload_ptr
     %increment
     DUP1
-    PUSH 0
+    DUP6
+    %clone_slot
     MSTORE_GENERAL
     // stack: new_ptr + 3, next_ptr, addr, key, payload_ptr, retdest
     %increment
@@ -772,8 +831,6 @@ global search_slot:
     %jump_neq_const(@U256_MAX, slot_found_no_write)
     // The storage key is not in the list.
     PANIC
-
-global debug_slot_not_found:
 slot_not_found:    
     // stack: pred_addr_or_pred_key, pred_ptr, addr, key, payload_ptr, retdest
     %stack (pred_addr_or_pred_key, pred_ptr, addr, key, payload_ptr, retdest)
@@ -785,23 +842,10 @@ slot_found_no_write:
     // stack: pred_ptr, addr, key, payload_ptr, retdest
     // Load the the payload pointer and access counter
     %add_const(2)
-    DUP1
     MLOAD_GENERAL
-    // stack: orig_payload_ptr, pred_ptr + 2, addr, key, payload_ptr, retdest
-    SWAP1
-    %increment
-    DUP1
-    MLOAD_GENERAL
-    %increment
-    // stack: access_ctr + 1, access_ctr_ptr, orig_payload_ptr, addr, key, payload_ptr, retdest
-    SWAP1
-    DUP2
-    // stack: access_ctr + 1, access_ctr_ptr, access_ctr + 1, orig_payload_ptr, addr, key, payload_ptr, retdest
-    MSTORE_GENERAL
-    // stack: access_ctr + 1, orig_payload_ptr, addr, key, payload_ptr, retdest
-    // If access_ctr == 1 then this it's a cold access 
-    %eq_const(1)
-    %stack (cold_access, orig_payload_ptr, addr, key, payload_ptr, retdest) -> (retdest, cold_access, orig_payload_ptr)
+    // stack: orig_payload_ptr, addr, key, payload_ptr, retdest
+    // TODO: remove the now unused cold access (the 0)
+    %stack (orig_payload_ptr, addr, key, payload_ptr, retdest) -> (retdest, 0, orig_payload_ptr)
     JUMP
 
 
@@ -857,8 +901,6 @@ global remove_all_account_slots:
     PROVER_INPUT(linked_list::remove_address_slots)
     // pred_ptr/5, retdest
     %get_valid_slot_ptr
-
-global debug_after_valid_ptr:
     // stack: pred_ptr, addr, retdest
     // First, check that the previous address is not `addr`
     DUP1 MLOAD_GENERAL

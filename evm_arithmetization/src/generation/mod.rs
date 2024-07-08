@@ -37,7 +37,7 @@ pub mod mpt;
 pub(crate) mod prover_input;
 pub(crate) mod rlp;
 pub(crate) mod state;
-mod trie_extractor;
+pub(crate) mod trie_extractor;
 
 use crate::witness::util::mem_write_log;
 
@@ -127,6 +127,8 @@ pub(crate) struct TrimmedGenerationInputs {
     /// The hash of the current block, and a list of the 256 previous block
     /// hashes.
     pub(crate) block_hashes: BlockHashes,
+
+    pub(crate) tries: TrieInputs,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
@@ -167,6 +169,7 @@ impl GenerationInputs {
             contract_code: self.contract_code.clone(),
             block_metadata: self.block_metadata.clone(),
             block_hashes: self.block_hashes.clone(),
+            tries: self.tries.clone(),
         }
     }
 }
