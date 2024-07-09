@@ -17,10 +17,18 @@ pub(crate) async fn stdio_main(
     let mut buffer = String::new();
     std::io::stdin().read_to_string(&mut buffer)?;
 
+    println!("holi");
+
     let des = &mut serde_json::Deserializer::from_str(&buffer);
-    let prover_input = ProverInput {
-        blocks: serde_path_to_error::deserialize(des)?,
-    };
+
+    // let prover_input = ProverInput {
+    //     blocks: serde_path_to_error::deserialize(des)?,
+    // };
+
+    let bytes = std::fs::read("/Users/agonzalez/zk_evm/trace_decoder/examples/witnesses_shanghai/19240700.witness.json").unwrap();
+    println!("chao");
+    let prover_input: ProverInput = serde_json::from_slice(&bytes).unwrap();
+    println!("recorcholis");
 
     let proved_blocks = prover_input
         .prove(
