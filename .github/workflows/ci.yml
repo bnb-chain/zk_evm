@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -51,6 +53,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -76,6 +80,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -101,6 +107,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -126,6 +134,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -141,4 +151,4 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all-features --all-targets -- -D warnings -A incomplete-features
+        run: cargo clippy --all-features --all-targets -- -D warnings -A incomplete-features -A clippy::doc_lazy_continuation

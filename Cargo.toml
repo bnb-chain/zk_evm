@@ -1,5 +1,6 @@
 [workspace]
-members = ["mpt_trie", "proof_gen", "trace_decoder", "evm_arithmetization"]
+members = ["mpt_trie", "proof_gen", "trace_decoder", "evm_arithmetization", "end_to_end"]
+exclude = ["plonky2"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -20,10 +21,10 @@ serde_json = "1.0.96"
 thiserror = "1.0.49"
 
 # plonky2-related dependencies
-plonky2 = "0.2.2"
-plonky2_maybe_rayon = "0.2.0"
-plonky2_util = "0.2.0"
-starky = "0.4.0"
+plonky2 = { path = "plonky2/plonky2"}
+plonky2_maybe_rayon = { path = "plonky2/maybe_rayon" }
+plonky2_util = { path = "plonky2/util" }
+starky = { path = "plonky2/starky" }
 
 
 [workspace.package]
