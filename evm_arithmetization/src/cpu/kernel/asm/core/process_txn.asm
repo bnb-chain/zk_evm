@@ -72,6 +72,18 @@ global buy_gas:
     %mload_txn_field(@TXN_FIELD_ORIGIN)
     // stack: sender_addr, gas_cost, retdest
     %deduct_eth
+
+    // stack: deduct_eth_status, retdest
+    %jumpi(panic)
+    // stack: retdest
+    
+    // retdest
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_GAS_USED_L1)
+    // l1_fee, retdest
+    %mload_txn_field(@TXN_FIELD_ORIGIN)
+    // sender_addr, l1_fee, retdest
+    %deduct_eth
+
     // stack: deduct_eth_status, retdest
     %jumpi(panic)
     // stack: retdest
@@ -356,14 +368,6 @@ process_message_txn_fail:
 
     // Pay the l1 coinbase.
     %mload_global_metadata(@GLOBAL_METADATA_BLOCK_GAS_USED_L1)
-    DUP1
-
-    // stack: l1_fee, l1_fee, retdest
-    %mload_txn_field(@TXN_FIELD_ORIGIN)
-    // stack: sender_addr, l1_fee, l1_fee, retdest
-    %deduct_eth
-    %jumpi(transfer_eth_failure)
-
     %mload_global_metadata(@GLOBAL_METADATA_BLOCK_L1_BENEFICIARY)
     // stack: l1_coinbase, l1_fee, used_gas', leftover_gas'
     %add_eth

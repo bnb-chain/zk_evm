@@ -169,7 +169,6 @@ async fn benchmark_one_block_range(run_prover: bool, block_numbers: Range<u64>, 
                     println!("skipped {} {}", block_number, i);
                     continue;
                 }
-                // 需要计时的代码
                 let tx_instant = Instant::now();
  
                 // let all_stark = AllStark::<F, D>::default();
@@ -193,7 +192,6 @@ async fn benchmark_one_block_range(run_prover: bool, block_numbers: Range<u64>, 
     }
 
     println!("total threads {}", threads.len());
-    // 等待并合并所有线程
     for thread in threads {
         thread.join().expect("Failed to join thread");
     }

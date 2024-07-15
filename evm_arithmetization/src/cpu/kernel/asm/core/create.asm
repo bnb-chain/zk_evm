@@ -270,7 +270,8 @@ global set_codehash:
     DUP1 %gt_const(@MAX_INITCODE_SIZE) %jumpi(fault_exception)
     // stack: code_size, kexit_info
     %num_bytes_to_num_words %mul_const(@INITCODE_WORD_COST)
-    %charge_gas
+    // %charge_gas
+    POP
 %endmacro
 
 
