@@ -910,6 +910,19 @@ impl Nibbles {
         }
     }
 
+    /// Creates `Nibbles` from a big endian `H256`.
+    pub fn from_h256_be_zero(v: H256) -> Self {
+        Self::from_h256_common_zero(|v| NibblesIntern::from_big_endian(v.as_bytes()), v)
+    }
+
+    // Creates Empty `Nibbles` from a big endian `0`.
+    fn from_h256_common_zero<F: Fn(H256) -> NibblesIntern>(conv_f: F, v: H256) -> Self {
+        Self {
+            count: 0,
+            packed: conv_f(v),
+        }
+    }
+
     /// Returns a slice of the internal bytes of packed nibbles.
     /// Only the relevant bytes (up to `count` nibbles) are considered valid.
     pub fn as_byte_slice(&self) -> &[u8] {
