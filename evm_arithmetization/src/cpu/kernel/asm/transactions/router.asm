@@ -32,6 +32,13 @@ read_txn_from_memory:
     %jumpi(process_type_2_txn)
     // stack: retdest
 
+    PUSH @INITIAL_TXN_RLP_ADDR
+    MLOAD_GENERAL
+    %eq_const(126)
+    // stack: first_byte == 126, retdest
+    %jumpi(process_type_126_txn)
+    // stack: retdest
+
     // At this point, since it's not a type 1 or 2 transaction,
     // it must be a legacy (aka type 0) transaction.
     %jump(process_type_0_txn)
