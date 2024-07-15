@@ -319,6 +319,35 @@ process_deposit_message_txn_fail:
 
 %macro deposit_pay_coinbase_and_refund_sender
     // stack: leftover_gas
+    DUP1
+    // stack: leftover_gas, leftover_gas
+    %mload_txn_field(@TXN_FIELD_GAS_LIMIT)
+    SUB
+    // stack: used_gas, leftover_gas
+    %mload_global_metadata(@GLOBAL_METADATA_REFUND_COUNTER)
+    // stack: refund, used_gas, leftover_gas
+    DUP2 %div_const(@MAX_REFUND_QUOTIENT) // max_refund = used_gas/5
+    // stack: max_refund, refund, used_gas, leftover_gas
+    %min
+    %stack (refund, used_gas, leftover_gas) -> (leftover_gas, refund, refund, used_gas)
+    ADD
+    // stack: leftover_gas', refund, used_gas
+    SWAP2
+    // stack: used_gas, refund, leftover_gas'
+    SUB
+    // stack: used_gas', leftover_gas'
+
+    POP
+    DUP1
+
+    // Refund gas to the origin.
+    %mload_txn_field(@TXN_FIELD_COMPUTED_FEE_PER_GAS)
+    MUL
+    // stack: leftover_gas_cost, leftover_gas'
+    %mload_txn_field(@TXN_FIELD_ORIGIN)
+    // stack: origin, leftover_gas_cost, leftover_gas'
+    %add_eth
+    // stack: leftover_gas'
 %endmacro
 
 // Sets @TXN_FIELD_MAX_FEE_PER_GAS and @TXN_FIELD_MAX_PRIORITY_FEE_PER_GAS.
