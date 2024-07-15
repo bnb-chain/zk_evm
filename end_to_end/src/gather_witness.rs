@@ -14,13 +14,13 @@ use evm_arithmetization::GenerationInputs;
 use mpt_trie::nibbles::Nibbles;
 use mpt_trie::partial_trie::{HashedPartialTrie, Node, PartialTrie};
 
-use crate::mpt::{apply_diffs, insert_mpt, trim, Mpt};
+use crate::mpt::{apply_diffs, insert_mpt, trim, Mpt, get_account_storage_post};
 use crate::rpc_utils::{
     get_block_by_number, get_block_hashes, get_block_metadata, get_diffmode_trace,
     get_prestatemode_trace, get_proof, get_receipt, get_tx,
 };
 use crate::utils::{
-    has_storage_deletion, keccak, OPTIMISM_BASE_FEE_ADDR, OPTIMISM_L1_BLOCK_ADDR,
+    has_storage_deletion, keccak, HardFork, OPTIMISM_BASE_FEE_ADDR, OPTIMISM_L1_BLOCK_ADDR,
     OPTIMISM_L1_FEE_ADDR,
 };
 
@@ -89,13 +89,40 @@ pub async fn construct_state_mpt_and_storage_mpts(
     Ok(())
 }
 
-pub fn encode_recepits(receipt: &TransactionReceipt) -> Vec<u8> {
+pub fn encode_recepits(receipt: &TransactionReceipt, fork: HardFork, tx_type: usize) -> Vec<u8> {
     let mut bs = rlp::RlpStream::new();
-    bs.begin_list(4);
+    let is_extend = fork == HardFork::TBD && tx_type == 126;
+    if is_extend {
+        bs.begin_list(6);
+    } else {
+        bs.begin_list(4);
+    }
     bs.append(&receipt.status.unwrap());
     bs.append(&receipt.cumulative_gas_used);
     bs.append(&receipt.logs_bloom);
     bs.append_list(&receipt.logs);
+    if is_extend {
+        let deposit_nonce = receipt
+            .other
+            .get_deserialized::<String>("depositNonce")
+            .unwrap_or_else(|| Ok("".into()))
+            .unwrap_or_default();
+        let deposit_nonce =
+            u64::from_str_radix(&deposit_nonce.trim_start_matches("0x"), 16).unwrap();
+        bs.append(&deposit_nonce);
+        let deposit_receipt_version = receipt
+            .other
+            .get_deserialized::<String>("depositReceiptVersion")
+            .unwrap_or_else(|| Ok("".into()))
+            .unwrap_or_default();
+        let deposit_receipt_version =
+            u64::from_str_radix(&deposit_receipt_version.trim_start_matches("0x"), 16).unwrap();
+        bs.append(&deposit_receipt_version);
+        println!(
+            "########3 adding deposit_receipt_version: {}",
+            deposit_receipt_version
+        );
+    }
     let bs_r = bs.out().freeze();
     let mut ref_bytes: Vec<u8> = Vec::new();
     ref_bytes.extend(bs_r);
@@ -108,11 +135,35 @@ pub fn encode_recepits(receipt: &TransactionReceipt) -> Vec<u8> {
     ref_bytes
 }
 
+fn merge_btree_maps<K: Ord + Clone, V: Clone + std::fmt::Debug>(map1: &mut BTreeMap<K, V>, map2: &BTreeMap<K, V>){
+    for (key, value) in map2.iter() {
+        if map1.contains_key(key) {
+            continue;
+        }
+        map1.insert(key.clone(), value.clone());
+    }
+}
+
 pub async fn gather_witness(
     block_number: u64,
+    fork: HardFork,
     provider: &Provider<Http>,
 ) -> anyhow::Result<Vec<GenerationInputs>> {
-    let chain_id: U256 = 0x15eb.into();
+    let mut chain_id: U256 = 1.into();
+    let url = provider.url().to_string();
+    if url.contains("opbnb-mainnet") {
+        chain_id = 0xcc.into();
+    }
+    if url.contains("opbnb-testnet") {
+        chain_id = 0x15eb.into();
+    }
+    if url.contains("optimism.blockpi.network") {
+        chain_id = 0xa.into();
+    }
+    if url.contains("opt-testnet") {
+        chain_id = 0xaa37dc.into();
+    }
+    println!("active chain id: {}", chain_id.as_u64());
     let block = get_block_by_number(block_number.into(), provider).await?;
     let tx_count = block.transactions.len();
 
@@ -226,15 +277,21 @@ pub async fn gather_witness(
                     .unwrap()
                     .clone(),
             );
-            op_account_19 = Some(
-                prestate_trace
-                    .0
-                    .get(&OPTIMISM_BASE_FEE_ADDR)
-                    .unwrap()
-                    .clone(),
-            );
-            op_account_1a = Some(prestate_trace.0.get(&OPTIMISM_L1_FEE_ADDR).unwrap().clone());
+            let acc = prestate_trace
+                .0
+                .get(&OPTIMISM_BASE_FEE_ADDR);
+            if let Some(account_state) = acc {
+                op_account_19 = Some(account_state.clone());
+            }
+            
+            let acc = prestate_trace
+                .0
+                .get(&OPTIMISM_L1_FEE_ADDR);
+            if let Some(account_sate) = acc {
+                op_account_1a = Some(account_sate.clone());
+            }
         }
+        println!("############ i: {}, acc_19.balance: {}", i, op_account_19.clone().unwrap().balance.unwrap().encode_hex());
         if i > 0 {
             let mut op_account_19_new = op_account_19.clone().unwrap();
             let mut op_account_1a_new = op_account_1a.clone().unwrap();
@@ -245,30 +302,84 @@ pub async fn gather_witness(
                     op_account_19_new.balance.unwrap() + gas_used_in_receipt * op_base_fee_per_gas,
                 );
                 // calculate op L1 fee
-                let sto = op_account_15.clone().unwrap().storage.unwrap();
-                let param_1 = U256::from(sto.get(&H256::from_low_u64_be(1)).unwrap().0);
-                let param_5 = U256::from(sto.get(&H256::from_low_u64_be(5)).unwrap().0);
-                let param_6 = U256::from(sto.get(&H256::from_low_u64_be(6)).unwrap().0);
                 let cnt_zero = signed_txn.iter().filter(|&n| *n == 0).count();
                 let cnt_non_zero = signed_txn.len() - cnt_zero;
-                let op_rollup_data_gas = cnt_zero * 4 + cnt_non_zero * 16; // Regolith only
-                let op_l1_fee = (U256::from(op_rollup_data_gas) + param_5) * param_1 * param_6;
-                let op_l1_fee = op_l1_fee.div(U256::from(1_000_000));
+                let sto = op_account_15.clone().unwrap().storage.unwrap();
+                let param_1 = U256::from(
+                    sto.get(&H256::from_low_u64_be(1))
+                        .unwrap_or(&H256::zero())
+                        .0,
+                );
+                println!("txn {} get {}", i, param_1.as_u128());
+                let param_5 = U256::from(
+                    sto.get(&H256::from_low_u64_be(5))
+                        .unwrap_or(&H256::zero())
+                        .0,
+                );
+                let param_6 = U256::from(
+                    sto.get(&H256::from_low_u64_be(6))
+                        .unwrap_or(&H256::zero())
+                        .0,
+                );
+
+                let param_3 = U256::from(
+                    sto.get(&H256::from_low_u64_be(3))
+                        .unwrap_or(&H256::zero())
+                        .0,
+                );
+                let param_3_16_20 = param_3.0[2] >> 32;
+                let param_3_20_24 = param_3.0[2] % (1 << 32);
+                let param_7 = U256::from(
+                    sto.get(&H256::from_low_u64_be(7))
+                        .unwrap_or(&H256::zero())
+                        .0,
+                );
+
+                let op_rollup_data_gas;
+                match fork {
+                    HardFork::BedRock => {
+                        op_rollup_data_gas = cnt_zero * 4 + (cnt_non_zero + 68) * 16;
+                    }
+                    _ => {
+                        op_rollup_data_gas = cnt_zero * 4 + cnt_non_zero * 16;
+                    }
+                }
+                println!("op_rollup_data_gas: {}", op_rollup_data_gas);
+                let mut op_l1_fee: U256;
+                match fork {
+                    HardFork::Ecotone => {
+                        op_l1_fee = U256::from(op_rollup_data_gas)
+                            * (U256::from(16) * param_1 * param_3_16_20 + param_7 * param_3_20_24);
+                        op_l1_fee = op_l1_fee.div(U256::from(16 * 1_000_000));
+                    }
+                    _ => {
+                        op_l1_fee = (U256::from(op_rollup_data_gas) + param_5) * param_1 * param_6;
+                        println!("param_5: {}", param_5.encode_hex());
+                        println!("param_1: {}", param_1.encode_hex());
+                        println!("param_6: {}", param_6.encode_hex());
+                        println!("op_l1_fee: {}", op_l1_fee.encode_hex());
+                        op_l1_fee = op_l1_fee.div(U256::from(1_000_000));
+                        println!("op_l1_fee: {}", op_l1_fee.encode_hex());
+                    }
+                }
                 tracing::debug!(
                     "op_acc_1a.balance_pre: {}",
                     op_account_1a_new.balance.unwrap().encode_hex()
                 );
+                // TODO TODO TODO temp disable L1 fee for account_1a
                 op_account_1a_new.balance = Some(op_account_1a_new.balance.unwrap() + op_l1_fee);
-                tracing::debug!("op_param_1: {}", param_1.encode_hex());
-                tracing::debug!("op_param_5: {}", param_5.encode_hex());
-                tracing::debug!("op_param_6: {}", param_6.encode_hex());
+                println!("op_param_1: {}", param_1.encode_hex());
+                println!("op_param_5: {}", param_5.encode_hex());
+                println!("op_param_6: {}", param_6.encode_hex());
+                println!("op_param_3_16_20: {}", param_3_16_20.encode_hex());
+                println!("op_param_3_20_24: {}", param_3_20_24.encode_hex());
                 tracing::debug!("cnt_zero: {}", cnt_zero);
                 tracing::debug!("cnt_non_zero: {}", cnt_non_zero);
                 tracing::debug!(
                     "op_acc_19.balance: {}",
                     op_account_19_new.balance.unwrap().encode_hex()
                 );
-                tracing::debug!("op_l1_fee: {}", op_l1_fee.encode_hex());
+                println!("op_l1_fee: {}", op_l1_fee.encode_hex());
                 tracing::debug!(
                     "op_acc_1a.balance_post: {}",
                     op_account_1a_new.balance.unwrap().encode_hex()
@@ -294,6 +405,7 @@ pub async fn gather_witness(
                     .post
                     .insert(OPTIMISM_BASE_FEE_ADDR, account_state);
 
+                // TODO TODO TODO
                 let account_state = AccountState {
                     balance: op_account_1a.clone().unwrap().balance,
                     code: None,
@@ -333,8 +445,8 @@ pub async fn gather_witness(
             ))?;
             file.write_all(&serde_json::to_vec(&prestate_trace)?)?;
 
-            op_account_19 = Some(op_account_19_new);
-            op_account_1a = Some(op_account_1a_new);
+            op_account_19 = Some(op_account_19_new.clone());
+            op_account_1a = Some(op_account_1a_new.clone());
         }
 
         if tx_count == 1 {
@@ -366,7 +478,7 @@ pub async fn gather_witness(
             };
             proof_gen_ir.insert(0, dummy_txn);
         }
-        tracing::debug!(
+        println!(
             "state_root before apply_diff: {}",
             state_mpt.hash().encode_hex()
         );
@@ -374,9 +486,14 @@ pub async fn gather_witness(
             state_mpt.clone(),
             storage_mpts.clone(),
             &mut contract_codes,
-            diffstate_trace,
+            diffstate_trace.clone(),
         );
-        tracing::debug!(
+        let op_account_15_origin = op_account_15.unwrap().clone();
+        op_account_15 = Some(get_account_storage_post(OPTIMISM_L1_BLOCK_ADDR, &diffstate_trace).unwrap_or(op_account_15_origin.clone()));
+        let sto_origin: BTreeMap<H256, H256> = op_account_15_origin.clone().storage.unwrap();
+        merge_btree_maps(op_account_15.as_mut().unwrap().storage.as_mut().unwrap(), &sto_origin);
+        // after the transaction
+        println!(
             "state_root after apply_diff: {}",
             next_state_mpt.hash().encode_hex()
         );
@@ -407,7 +524,7 @@ pub async fn gather_witness(
 
         new_receipts_mpt.insert(
             Nibbles::from_bytes_be(&rlp::encode(&receipt.transaction_index)).unwrap(),
-            encode_recepits(&receipt),
+            encode_recepits(&receipt, fork, tx.transaction_type.unwrap().as_usize()),
         )?;
 
         // Use withdrawals for the last tx in the block.
@@ -415,35 +532,32 @@ pub async fn gather_witness(
         // For the last tx, we check that the final trie roots match those in the block
         // header.
         let trie_roots_after = if last_tx {
-            tracing::debug!(
+            println!(
                 "{} new receipt_root hash from local computation {}",
                 i,
                 new_receipts_mpt.hash()
             );
-            tracing::debug!(
+            println!(
                 "{} new receipt_root hash from block value {}",
-                i,
-                block.receipts_root
+                i, block.receipts_root
             );
-            tracing::debug!(
+            println!(
                 "{} new state_root hash from local computation {}",
                 i,
                 next_state_mpt.hash()
             );
-            tracing::debug!(
+            println!(
                 "{} new state_root hash from block value {}",
-                i,
-                block.state_root
+                i, block.state_root
             );
-            tracing::debug!(
+            println!(
                 "{} new tx_root hash from local computation {}",
                 i,
                 new_txns_mpt.hash()
             );
-            tracing::debug!(
+            println!(
                 "{} new tx_root hash from block value {}",
-                i,
-                block.transactions_root
+                i, block.transactions_root
             );
             TrieRoots {
                 state_root: block.state_root,
@@ -457,19 +571,23 @@ pub async fn gather_witness(
                 receipts_root: new_receipts_mpt.hash(),
             }
         };
+        // TODO TODO TODO
+        // let gas_used_l1 = U256::zero();
         let gas_used_l1 = receipt
             .other
             .get_deserialized::<U256>("l1Fee")
             .unwrap_or_else(|| Ok(U256::zero()))
             .unwrap_or_default();
-        tracing::debug!("gas_used_l1: {}", gas_used_l1);
+        println!("gas_used_l1: {}", gas_used_l1);
+        let col: Vec<_> = trimmed_storage_mpts.into_iter().collect();
+        let cloned: Vec<(ethereum_types::H256, HashedPartialTrie)> = serde_json::from_str(&serde_json::to_string(&col).unwrap()).unwrap();
         let inputs = GenerationInputs {
             signed_txn: Some(signed_txn),
             tries: TrieInputs {
                 state_trie: trimmed_state_mpt,
                 transactions_trie: txns_mpt.clone(),
                 receipts_trie: receipts_mpt.clone(),
-                storage_tries: trimmed_storage_mpts.into_iter().collect(),
+                storage_tries: cloned,
             },
             withdrawals,
             contract_code: contract_codes.clone(),

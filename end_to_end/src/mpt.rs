@@ -1,14 +1,20 @@
 #![allow(missing_docs)]
 use std::collections::{BTreeMap, HashMap};
+use std::ptr::null;
 use std::sync::Arc;
 
 use ethers::prelude::*;
 use ethers::utils::rlp;
 use evm_arithmetization::generation::mpt::AccountRlp;
+use itertools::Itertools;
+use k256::pkcs8::der::asn1::Null;
+use std::backtrace::Backtrace;
 use mpt_trie::nibbles::Nibbles;
 use mpt_trie::partial_trie::PartialTrie;
 use mpt_trie::partial_trie::{HashedPartialTrie, Node};
 use mpt_trie::trie_subsets::create_trie_subset;
+use ethers::abi::AbiEncode;
+use std::cmp::Ordering;
 
 use crate::utils::{keccak, EMPTY_HASH};
 
@@ -43,6 +49,12 @@ impl Mpt {
         }
     }
 
+    fn pad_to_u8_32(bytes: &[u8]) -> [u8; 32] {
+        let mut padded_bytes = [0u8; 32];
+        padded_bytes[32 - bytes.len()..].copy_from_slice(bytes);
+        padded_bytes
+    }
+
     fn to_partial_trie_helper(&self, root: H256) -> HashedPartialTrie {
         let node = self.mpt.get(&root);
         let data = if let Some(mpt_node) = node {
@@ -50,80 +62,119 @@ impl Mpt {
         } else {
             return Node::Hash(root).into();
         };
-        let a = rlp::decode_list::<Vec<u8>>(&data);
-        match a.len() {
-            17 => {
-                let value = a[16].clone();
+        let rlp_obj = rlp::Rlp::new(&data as &[u8]);
+        let decoded = rlp_obj.as_list::<Vec<u8>>();
+        match decoded {
+            Ok(a) => {
+                match a.len() {
+                    17 => {
+                        let value = a[16].clone();
+                        let mut children = vec![];
+                        for ch in a.iter().take(16) {
+                            if ch.is_empty() {
+                                children.push(Node::Empty.into());
+                                continue;
+                            }
+                            children.push(Arc::new(Box::new(
+                                self.to_partial_trie_helper(H256::from_slice(ch)),
+                            )));
+                        }
+                        Node::Branch {
+                            value,
+                            children: children.try_into().unwrap(),
+                        }
+                        .into()
+                    }
+                    2 => match a[0][0] >> 4 {
+                        0 => {
+                            let ext_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            Node::Extension {
+                                nibbles: ext_prefix,
+                                child: Arc::new(Box::new(
+                                    self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                                )),
+                            }
+                            .into()
+                        }
+                        1 => {
+                            let b = a[0][0] & 0xf;
+                            let mut ext_prefix = if a[0].len() > 1 {
+                                Nibbles::from_bytes_be(&a[0][1..]).unwrap()
+                            } else {
+                                Nibbles::from_h256_be_zero(H256::zero())
+                                // Nibbles {
+                                //     count: 0,
+                                //     //packed: U512::zero(),
+                                //     packed: U256::zero(),
+                                // }
+                            };
+                            ext_prefix.push_nibble_front(b);
+                            Node::Extension {
+                                nibbles: ext_prefix,
+                                child: Arc::new(Box::new(
+                                    self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                                )),
+                            }
+                            .into()
+                        }
+                        2 => {
+                            let leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            Node::Leaf {
+                                nibbles: leaf_prefix,
+                                value: a[1].clone(),
+                            }
+                            .into()
+                        }
+                        3 => {
+                            let b = a[0][0] & 0xf;
+                            let mut leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            leaf_prefix.push_nibble_front(b);
+                            Node::Leaf {
+                                nibbles: leaf_prefix,
+                                value: a[1].clone(),
+                            }
+                            .into()
+                        }
+                        _ => panic!("wtf?"),
+                    },
+                    _ => panic!("wtf?"),
+                }
+            }
+            Err(_e) => {
+                let value = rlp_obj.at(16).unwrap().clone();
                 let mut children = vec![];
-                for ch in a.iter().take(16) {
+                for ch_i in 0..16 {
+                    let ch = rlp_obj.at(ch_i).unwrap();
                     if ch.is_empty() {
                         children.push(Node::Empty.into());
                         continue;
                     }
+                    if ch.as_raw().len() == 33 {
+                        children.push(Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256::from_slice(&ch.as_raw()[1..33])),
+                        )));
+                        continue;
+                    }
+                    if ch.item_count().unwrap_or_default() == 2 {
+                        children.push(Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256(keccak(&ch.as_raw()))),
+                        )));
+                        continue;
+                    }
                     children.push(Arc::new(Box::new(
-                        self.to_partial_trie_helper(H256::from_slice(ch)),
-                    )));
+                        self.to_partial_trie_helper(H256::from_slice(&Self::pad_to_u8_32(&ch.as_raw()))),
+                    )))
                 }
+
+                let value_u8 = value.as_list::<u8>();
                 Node::Branch {
-                    value,
+                    value: value_u8.unwrap_or_default(),
                     children: children.try_into().unwrap(),
                 }
                 .into()
             }
-            2 => match a[0][0] >> 4 {
-                0 => {
-                    let ext_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
-                    Node::Extension {
-                        nibbles: ext_prefix,
-                        child: Arc::new(Box::new(
-                            self.to_partial_trie_helper(H256::from_slice(&a[1])),
-                        )),
-                    }
-                    .into()
-                }
-                1 => {
-                    let b = a[0][0] & 0xf;
-                    let mut ext_prefix = if a[0].len() > 1 {
-                        Nibbles::from_bytes_be(&a[0][1..]).unwrap()
-                    } else {
-                        Nibbles::from_h256_be_zero(H256::zero())
-                        // Nibbles {
-                        //     count: 0,
-                        //     //packed: U512::zero(),
-                        //     packed: U256::zero(),
-                        // }
-                    };
-                    ext_prefix.push_nibble_front(b);
-                    Node::Extension {
-                        nibbles: ext_prefix,
-                        child: Arc::new(Box::new(
-                            self.to_partial_trie_helper(H256::from_slice(&a[1])),
-                        )),
-                    }
-                    .into()
-                }
-                2 => {
-                    let leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
-                    Node::Leaf {
-                        nibbles: leaf_prefix,
-                        value: a[1].clone(),
-                    }
-                    .into()
-                }
-                3 => {
-                    let b = a[0][0] & 0xf;
-                    let mut leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
-                    leaf_prefix.push_nibble_front(b);
-                    Node::Leaf {
-                        nibbles: leaf_prefix,
-                        value: a[1].clone(),
-                    }
-                    .into()
-                }
-                _ => panic!("wtf?"),
-            },
-            _ => panic!("wtf?"),
         }
+        
     }
 }
 
@@ -165,7 +216,12 @@ fn insert_mpt_helper(mpt: &mut Mpt, rlp_node: Bytes) {
         Err(_e) => {
             for i in 0..rlp_obj.item_count().unwrap() {
                 let item = rlp_obj.at(i).unwrap();
-                insert_mpt_helper(mpt, Bytes::from(item.as_raw().to_vec()));
+                if item.is_empty() {
+                    continue;
+                }
+                if item.item_count().unwrap_or_default() == 2 {
+                    insert_mpt_helper(mpt, Bytes::from(item.as_raw().to_vec()));
+                }
             }
         }
     }
@@ -188,6 +244,12 @@ fn nibbles_from_hex_prefix_encoding(b: &[u8]) -> Nibbles {
         }
         _ => panic!("wtf?"),
     }
+}
+
+pub fn get_account_storage_post(
+    address: H160,
+    diff: &DiffMode) -> Option<AccountState> {
+     diff.post.get(&address).cloned()
 }
 
 pub fn apply_diffs(

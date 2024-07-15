@@ -5,6 +5,15 @@ use std::collections::HashMap;
 use ethers::prelude::*;
 use ethers::utils::keccak256;
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum HardFork {
+    BedRock,
+    Regolith,
+    Ecotone,
+    TBD,
+}
+
 /// Keccak of empty bytes.
 pub const EMPTY_HASH: H256 = H256([
     197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
@@ -15,7 +24,7 @@ pub const EMPTY_HASH: H256 = H256([
 pub const OPTIMISM_L1_BLOCK_ADDR: Address =
     H160([66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21]);
 
-// OPTIMISM_BASE_FEE_ADDR: "0x4200000000000000000000000000000000000021"
+// OPTIMISM_BASE_FEE_ADDR: "0x4200000000000000000000000000000000000019"
 pub const OPTIMISM_BASE_FEE_ADDR: Address =
     H160([66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 25]);
 

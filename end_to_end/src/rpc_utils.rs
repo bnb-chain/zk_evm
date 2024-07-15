@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{convert_bloom, EMPTY_HASH, OPTIMISM_BASE_FEE_ADDR, OPTIMISM_L1_FEE_ADDR};
 
+pub const OPTIMISM_MAINNET_RPC: &str = "https://optimism.blockpi.network/v1/rpc/819c82db086d814fd6f285a392a5c09691e01906";
+pub const OPBNB_TESTNET_RPC: &str = "https://opbnb-testnet.nodereal.io/v1/b1acba7dd0f74d61942619cf09ec30da";
+
 fn address_formatter(address: Address) -> String {
     address
         .encode_hex()
@@ -158,7 +161,7 @@ pub(crate) async fn get_prestate_account_state(
         balance: Some(account_info.balance),
         code,
         nonce: None,
-        storage: None,
+        storage: None, // todo not correct
     };
 
     Ok(account_state)

@@ -19,9 +19,11 @@ rustup update
 ### Get Witness from RPC and Run Prover
 
 ```shell
+#export BLOCK_NUMBER=25569387
+export BLOCK_NUMBER=114165247
 rm dump/trace_diffmode*.json
 rm dump/trace_prestatemode*.json
-rm test_witness.json
+rm witness/test_witness_$BLOCK_NUMBER.json
 rm log/output.log
 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
@@ -29,13 +31,8 @@ RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ### Run Prover with Witness from Dump
 
 ```shell
-rm test_witness.json
-rm log/output.log
-BLOCK_NUMBER=25569387 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
-```
-
-```shell
-rm test_witness.json
+export BLOCK_NUMBER=114165247
+rm witness/test_witness_$BLOCK_NUMBER.json
 rm log/output.log
 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
@@ -43,6 +40,7 @@ RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ### Run Prover with Existing Witness
 
 ```shell
+export BLOCK_NUMBER=114165247
 rm log/output.log
 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
@@ -52,8 +50,9 @@ trace log will be in the log/output.log
 ### Run Real Prover
 
 ```shell
+export BLOCK_NUMBER=114165247
 rm log/output.log
-BLOCK_NUMBER=25569387 RUN_PROVER=1 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
+RUN_PROVER=1 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
 
 ## Change witness
