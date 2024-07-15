@@ -31,15 +31,24 @@ fn test_simple_transfer() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("2c7536e3605d9c16a7a3d7b1898e529396a65c23");
     let to = hex!("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0");
 
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_state_key = keccak(to);
 
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_state_key.as_bytes()).unwrap();
 
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
     let sender_account_before = AccountRlp {
         nonce: 5.into(),
         balance: eth_to_wei(100_000.into()),
@@ -48,11 +57,14 @@ fn test_simple_transfer() -> anyhow::Result<()> {
     };
     let to_account_before = AccountRlp::default();
 
-    let state_trie_before = Node::Leaf {
-        nibbles: sender_nibbles,
-        value: rlp::encode(&sender_account_before).to_vec(),
-    }
-    .into();
+    let mut state_trie_before = HashedPartialTrie::from(Node::Empty);
+
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
+
+    state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
 
     let tries_before = TrieInputs {
         state_trie: state_trie_before,
@@ -67,6 +79,8 @@ fn test_simple_transfer() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -94,8 +108,18 @@ fn test_simple_transfer() -> anyhow::Result<()> {
             balance: value,
             ..to_account_before
         };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x33590u64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
 
         let mut children = core::array::from_fn(|_| Node::Empty.into());
+        children[base_beneficiary_nibbles.get_nibble(0) as usize] = Node::Leaf {
+            nibbles: base_beneficiary_nibbles.truncate_n_nibbles_front(1),
+            value: rlp::encode(&base_beneficiary_account_after).to_vec(),
+        }
+        .into();
         children[sender_nibbles.get_nibble(0) as usize] = Node::Leaf {
             nibbles: sender_nibbles.truncate_n_nibbles_front(1),
             value: rlp::encode(&sender_account_after).to_vec(),
@@ -150,6 +174,7 @@ fn test_simple_transfer() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

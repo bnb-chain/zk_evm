@@ -31,21 +31,42 @@ fn add11_yml() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let l1_beneficiary = hex!("420000000000000000000000000000000000001a");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
     let to = hex!("095e7baea6a6c7c4c2dfeb977efac326af552d87");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let l1_beneficiary_state_key = keccak(l1_beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_hashed = keccak(to);
 
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
+    let l1_beneficiary_nibbles =
+        Nibbles::from_bytes_be(l1_beneficiary_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
 
     let code = [0x60, 0x01, 0x60, 0x01, 0x01, 0x60, 0x00, 0x55, 0x00];
     let code_hash = keccak(code);
 
+    let mut contract_code = HashMap::new();
+    contract_code.insert(keccak(vec![]), vec![]);
+    contract_code.insert(code_hash, code.to_vec());
+
     let beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let l1_beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
         nonce: 1.into(),
         ..AccountRlp::default()
     };
@@ -60,12 +81,20 @@ fn add11_yml() -> anyhow::Result<()> {
     };
 
     let mut state_trie_before = HashedPartialTrie::from(Node::Empty);
-    state_trie_before.insert(
+    let _ = state_trie_before.insert(
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
-    )?;
-    state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
-    state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec())?;
+    );
+    let _ = state_trie_before.insert(
+        l1_beneficiary_nibbles,
+        rlp::encode(&l1_beneficiary_account_before).to_vec(),
+    );
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
+    let _ = state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec());
+    let _ = state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec());
 
     let tries_before = TrieInputs {
         state_trie: state_trie_before,
@@ -76,25 +105,19 @@ fn add11_yml() -> anyhow::Result<()> {
 
     let txn = hex!("f863800a83061a8094095e7baea6a6c7c4c2dfeb977efac326af552d87830186a0801ba0ffb600e63115a7362e7811894a91d8ba4330e526f22121c994c4692035dfdfd5a06198379fcac8de3dbfac48b165df4bf88e2088f294b61efb9a65fe2281c76e16");
 
-    let block_metadata = BlockMetadata {
-        block_beneficiary: Address::from(beneficiary),
-        block_timestamp: 0x03e8.into(),
-        block_number: 1.into(),
-        block_difficulty: 0x020000.into(),
-        block_random: H256::from_uint(&0x020000.into()),
-        block_gaslimit: 0xff112233u32.into(),
-        block_chain_id: 1.into(),
-        block_base_fee: 0xa.into(),
-        block_gas_used: 0xa868u64.into(),
-        block_bloom: [0.into(); 8],
-    };
-
-    let mut contract_code = HashMap::new();
-    contract_code.insert(keccak(vec![]), vec![]);
-    contract_code.insert(code_hash, code.to_vec());
+    let gas_used = 0xa868u64.into();
 
     let expected_state_trie_after = {
         let beneficiary_account_after = AccountRlp {
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let l1_beneficiary_account_after = AccountRlp {
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x69410u64.into(),
             nonce: 1.into(),
             ..AccountRlp::default()
         };
@@ -116,27 +139,35 @@ fn add11_yml() -> anyhow::Result<()> {
         };
 
         let mut expected_state_trie_after = HashedPartialTrie::from(Node::Empty);
-        expected_state_trie_after.insert(
+        let _ = expected_state_trie_after.insert(
             beneficiary_nibbles,
             rlp::encode(&beneficiary_account_after).to_vec(),
-        )?;
-        expected_state_trie_after
-            .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec())?;
-        expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec())?;
+        );
+        let _ = expected_state_trie_after.insert(
+            l1_beneficiary_nibbles,
+            rlp::encode(&l1_beneficiary_account_after).to_vec(),
+        );
+        let _ = expected_state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
+        );
+        let _ = expected_state_trie_after
+            .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec());
+        let _ =
+            expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec());
         expected_state_trie_after
     };
-
     let receipt_0 = LegacyReceiptRlp {
         status: true,
-        cum_gas_used: 0xa868u64.into(),
+        cum_gas_used: gas_used,
         bloom: vec![0; 256].into(),
         logs: vec![],
     };
     let mut receipts_trie = HashedPartialTrie::from(Node::Empty);
-    receipts_trie.insert(
+    let _ = receipts_trie.insert(
         Nibbles::from_str("0x80").unwrap(),
         rlp::encode(&receipt_0).to_vec(),
-    )?;
+    );
     let transactions_trie: HashedPartialTrie = Node::Leaf {
         nibbles: Nibbles::from_str("0x80").unwrap(),
         value: txn.to_vec(),
@@ -148,21 +179,38 @@ fn add11_yml() -> anyhow::Result<()> {
         transactions_root: transactions_trie.hash(),
         receipts_root: receipts_trie.hash(),
     };
+
+    let block_metadata = BlockMetadata {
+        block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Address::from(l1_beneficiary),
+        block_base_beneficiary: Address::from(base_beneficiary),
+        block_timestamp: 0x03e8.into(),
+        block_number: 1.into(),
+        block_difficulty: 0x020000.into(),
+        block_random: H256::from_uint(&0x020000.into()),
+        block_gaslimit: 0xff112233u32.into(),
+        block_chain_id: 1.into(),
+        block_base_fee: 0xa.into(),
+        block_gas_used: gas_used,
+        block_bloom: [0.into(); 8],
+    };
+
     let inputs = GenerationInputs {
         signed_txn: Some(txn.to_vec()),
         withdrawals: vec![],
         tries: tries_before,
         trie_roots_after,
-        contract_code,
+        contract_code: contract_code.clone(),
         block_metadata,
         checkpoint_state_trie_root: HashedPartialTrie::from(Node::Empty).hash(),
         txn_number_before: 0.into(),
         gas_used_before: 0.into(),
-        gas_used_after: 0xa868u64.into(),
+        gas_used_after: gas_used,
         block_hashes: BlockHashes {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

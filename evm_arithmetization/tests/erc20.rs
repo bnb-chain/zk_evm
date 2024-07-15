@@ -49,19 +49,33 @@ fn test_erc20() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
     let giver = hex!("e7f1725E7734CE288F8367e1Bb143E90bb3F0512");
     let token = hex!("5FbDB2315678afecb367f032d93F642f64180aa3");
 
     let sender_state_key = keccak(sender);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let giver_state_key = keccak(giver);
     let token_state_key = keccak(token);
 
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let giver_nibbles = Nibbles::from_bytes_be(giver_state_key.as_bytes()).unwrap();
     let token_nibbles = Nibbles::from_bytes_be(token_state_key.as_bytes()).unwrap();
 
     let mut state_trie_before = HashedPartialTrie::from(Node::Empty);
+
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account()).to_vec())?;
     state_trie_before.insert(giver_nibbles, rlp::encode(&giver_account()?).to_vec())?;
     state_trie_before.insert(token_nibbles, rlp::encode(&token_account()?).to_vec())?;
@@ -84,6 +98,8 @@ fn test_erc20() -> anyhow::Result<()> {
     let bloom = bloom();
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -107,6 +123,15 @@ fn test_erc20() -> anyhow::Result<()> {
             balance: sender_account.balance - gas_used * 0xa,
             ..sender_account
         };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x89efeu64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let _ = state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
+        );
         state_trie_after.insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec())?;
         state_trie_after.insert(giver_nibbles, rlp::encode(&giver_account()?).to_vec())?;
         let token_account_after = AccountRlp {
@@ -171,6 +196,7 @@ fn test_erc20() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

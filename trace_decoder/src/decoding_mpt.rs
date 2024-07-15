@@ -74,6 +74,7 @@ impl MptProcessedBlockTrace {
             txn_number_after: U256::zero(),
             gas_used_before: U256::zero(),
             gas_used_after: U256::zero(),
+            gas_used_l1: U256::zero(),
         };
 
         // A copy of the initial extra_data possibly needed during padding.
@@ -494,6 +495,7 @@ impl MptProcessedBlockTrace {
             txn_number_before: extra_data.txn_number_before,
             gas_used_before: extra_data.gas_used_before,
             gas_used_after: extra_data.gas_used_after,
+            gas_used_l1: extra_data.gas_used_l1,
             signed_txn: txn_info.meta.txn_bytes,
             withdrawals: Vec::default(), /* Only ever set in a dummy txn at the end of
                                           * the block (see `[add_withdrawals_to_txns]`
@@ -616,6 +618,7 @@ fn create_dummy_gen_input_common(
         txn_number_before: extra_data.txn_number_before,
         gas_used_before: extra_data.gas_used_before,
         gas_used_after: extra_data.gas_used_after,
+        gas_used_l1: extra_data.gas_used_l1,
         contract_code: HashMap::default(),
         withdrawals: vec![], // this is set after creating dummy payloads
     }

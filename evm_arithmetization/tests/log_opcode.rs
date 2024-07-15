@@ -36,14 +36,18 @@ fn test_log_opcodes() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("af1276cbb260bb13deddb4209ae99ae6e497f446");
     // Private key: DCDFF53B4F013DBCDC717F89FE3BF4D8B10512AAE282B48E01D7530470382701
     let to = hex!("095e7baea6a6c7c4c2dfeb977efac326af552d87");
 
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let beneficiary_state_key = keccak(beneficiary);
     let sender_state_key = keccak(sender);
     let to_hashed = keccak(to);
 
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
@@ -85,6 +89,15 @@ fn test_log_opcodes() -> anyhow::Result<()> {
 
     // Initialize the state trie with three accounts.
     let mut state_trie_before = HashedPartialTrie::from(Node::Empty);
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
     state_trie_before.insert(
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
@@ -134,6 +147,8 @@ fn test_log_opcodes() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -197,6 +212,15 @@ fn test_log_opcodes() -> anyhow::Result<()> {
 
     // Update the state trie.
     let mut expected_state_trie_after = HashedPartialTrie::from(Node::Empty);
+    let base_beneficiary_account_after = AccountRlp {
+        balance: 0x371a4u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let _ = expected_state_trie_after.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_after).to_vec(),
+    );
     expected_state_trie_after.insert(
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_after).to_vec(),
@@ -233,6 +257,7 @@ fn test_log_opcodes() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);
@@ -281,21 +306,30 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender_first = hex!("af1276cbb260bb13deddb4209ae99ae6e497f446");
     let to_first = hex!("095e7baea6a6c7c4c2dfeb977efac326af552d87");
     let to = hex!("095e7baea6a6c7c4c2dfeb977efac326af552e89");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender_first);
     let to_hashed = keccak(to_first);
     let to_hashed_2 = keccak(to);
 
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
     let to_second_nibbles = Nibbles::from_bytes_be(to_hashed_2.as_bytes()).unwrap();
 
     let beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
         nonce: 1.into(),
         ..AccountRlp::default()
     };
@@ -321,6 +355,10 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
     )?;
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
     state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec())?;
     state_trie_before.insert(
@@ -340,6 +378,8 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
 
     let block_1_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -381,6 +421,11 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
         balance: txn_value.into(),
         ..AccountRlp::default()
     };
+    let base_beneficiary_account_after = AccountRlp {
+        balance: 0x33450u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
 
     let mut contract_code = HashMap::new();
     contract_code.insert(keccak(vec![]), vec![]);
@@ -391,6 +436,10 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_after).to_vec(),
     )?;
+    let _ = expected_state_trie_after.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_after).to_vec(),
+    );
     expected_state_trie_after
         .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec())?;
     expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec())?;
@@ -443,6 +492,7 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
             prev_hashes: block_hashes.clone(),
             cur_hash: block_1_hash,
         },
+        gas_used_l1: 0.into(),
     };
 
     // Preprocess all circuits.
@@ -489,7 +539,11 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
         nonce: 1.into(),
         ..AccountRlp::default()
     };
-
+    let base_beneficiary_account_after = AccountRlp {
+        balance: 0x6a5f4u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
     let sender_balance_after = sender_balance_after - gas_used * txn_gas_price;
     let sender_account_after = AccountRlp {
         balance: sender_balance_after,
@@ -540,6 +594,10 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_after).to_vec(),
     )?;
+    expected_state_trie_after.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_after).to_vec(),
+    )?;
     expected_state_trie_after
         .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec())?;
     expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec())?;
@@ -573,6 +631,7 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
             prev_hashes: block_hashes.clone(),
             cur_hash: block_1_hash,
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove root second", log::Level::Info);
@@ -603,6 +662,8 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
 
     let block_2_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 2.into(),
         block_difficulty: 0x020000.into(),
@@ -639,6 +700,7 @@ fn test_log_with_aggreg() -> anyhow::Result<()> {
             prev_hashes: block_hashes,
             cur_hash: block_2_hash,
         },
+        gas_used_l1: 0.into(),
     };
 
     let (root_proof, public_values) =

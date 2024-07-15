@@ -18,14 +18,22 @@ use crate::GenerationInputs;
 #[test]
 fn test_add11_yml() {
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let l1_beneficiary = hex!("420000000000000000000000000000000000001a");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
     let to = hex!("095e7baea6a6c7c4c2dfeb977efac326af552d87");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let l1_beneficiary_state_key = keccak(l1_beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_hashed = keccak(to);
 
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
+    let l1_beneficiary_nibbles =
+        Nibbles::from_bytes_be(l1_beneficiary_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
 
@@ -37,6 +45,15 @@ fn test_add11_yml() {
     contract_code.insert(code_hash, code.to_vec());
 
     let beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let l1_beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
         nonce: 1.into(),
         ..AccountRlp::default()
     };
@@ -55,6 +72,14 @@ fn test_add11_yml() {
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
     );
+    state_trie_before.insert(
+        l1_beneficiary_nibbles,
+        rlp::encode(&l1_beneficiary_account_before).to_vec(),
+    );
+    state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec());
     state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec());
 
@@ -71,6 +96,15 @@ fn test_add11_yml() {
 
     let expected_state_trie_after = {
         let beneficiary_account_after = AccountRlp {
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let l1_beneficiary_account_after = AccountRlp {
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x69410u64.into(),
             nonce: 1.into(),
             ..AccountRlp::default()
         };
@@ -95,6 +129,14 @@ fn test_add11_yml() {
         expected_state_trie_after.insert(
             beneficiary_nibbles,
             rlp::encode(&beneficiary_account_after).to_vec(),
+        );
+        expected_state_trie_after.insert(
+            l1_beneficiary_nibbles,
+            rlp::encode(&l1_beneficiary_account_after).to_vec(),
+        );
+        expected_state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
         );
         expected_state_trie_after
             .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec());
@@ -126,6 +168,8 @@ fn test_add11_yml() {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Address::from(l1_beneficiary),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -152,6 +196,7 @@ fn test_add11_yml() {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let initial_stack = vec![];
@@ -168,14 +213,22 @@ fn test_add11_yml_with_exception() {
     // In this test, we make sure that the user code throws a stack underflow
     // exception.
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let l1_beneficiary = hex!("420000000000000000000000000000000000001a");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
     let to = hex!("095e7baea6a6c7c4c2dfeb977efac326af552d87");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let l1_beneficiary_state_key = keccak(l1_beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_hashed = keccak(to);
 
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
+    let l1_beneficiary_nibbles =
+        Nibbles::from_bytes_be(l1_beneficiary_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
 
@@ -187,6 +240,15 @@ fn test_add11_yml_with_exception() {
     contract_code.insert(code_hash, code.to_vec());
 
     let beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let l1_beneficiary_account_before = AccountRlp {
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
         nonce: 1.into(),
         ..AccountRlp::default()
     };
@@ -204,6 +266,14 @@ fn test_add11_yml_with_exception() {
     state_trie_before.insert(
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
+    );
+    state_trie_before.insert(
+        l1_beneficiary_nibbles,
+        rlp::encode(&l1_beneficiary_account_before).to_vec(),
+    );
+    state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
     );
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec());
     state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec());
@@ -229,12 +299,29 @@ fn test_add11_yml_with_exception() {
             nonce: 1.into(),
             ..AccountRlp::default()
         };
+        let l1_beneficiary_account_after = AccountRlp {
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x3D0900u64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
         let to_account_after = to_account_before;
 
         let mut expected_state_trie_after = HashedPartialTrie::from(Node::Empty);
         expected_state_trie_after.insert(
             beneficiary_nibbles,
             rlp::encode(&beneficiary_account_after).to_vec(),
+        );
+        expected_state_trie_after.insert(
+            l1_beneficiary_nibbles,
+            rlp::encode(&l1_beneficiary_account_after).to_vec(),
+        );
+        expected_state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
         );
         expected_state_trie_after
             .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec());
@@ -267,6 +354,8 @@ fn test_add11_yml_with_exception() {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Address::from(l1_beneficiary),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -293,6 +382,7 @@ fn test_add11_yml_with_exception() {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let initial_stack = vec![];

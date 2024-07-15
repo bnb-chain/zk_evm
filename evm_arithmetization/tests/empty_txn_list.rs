@@ -69,6 +69,7 @@ fn test_empty_txn_list() -> anyhow::Result<()> {
             prev_hashes: initial_block_hashes,
             cur_hash: H256::default(),
         },
+        gas_used_l1: Default::default(),
     };
 
     // Initialize the preprocessed circuits for the zkEVM.

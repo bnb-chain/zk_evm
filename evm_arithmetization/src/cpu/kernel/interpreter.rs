@@ -184,6 +184,14 @@ impl<F: Field> Interpreter<F> {
                 GlobalMetadata::BlockBeneficiary,
                 U256::from_big_endian(&metadata.block_beneficiary.0),
             ),
+            (
+                GlobalMetadata::BlockL1Beneficiary,
+                U256::from_big_endian(&metadata.block_l1_beneficiary.0),
+            ),
+            (
+                GlobalMetadata::BlockBaseBeneficiary,
+                U256::from_big_endian(&metadata.block_base_beneficiary.0),
+            ),
             (GlobalMetadata::BlockTimestamp, metadata.block_timestamp),
             (GlobalMetadata::BlockNumber, metadata.block_number),
             (GlobalMetadata::BlockDifficulty, metadata.block_difficulty),
@@ -201,6 +209,7 @@ impl<F: Field> Interpreter<F> {
             (GlobalMetadata::BlockGasUsed, metadata.block_gas_used),
             (GlobalMetadata::BlockGasUsedBefore, inputs.gas_used_before),
             (GlobalMetadata::BlockGasUsedAfter, inputs.gas_used_after),
+            (GlobalMetadata::BlockGasUsedL1, inputs.gas_used_l1),
             (GlobalMetadata::TxnNumberBefore, inputs.txn_number_before),
             (
                 GlobalMetadata::TxnNumberAfter,

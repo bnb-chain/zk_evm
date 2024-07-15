@@ -80,6 +80,7 @@ fn test_withdrawals() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: Default::default(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

@@ -33,14 +33,18 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("2c7536e3605d9c16a7a3d7b1898e529396a65c23");
     let to = hex!("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_state_key = keccak(to);
 
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_state_key.as_bytes()).unwrap();
 
@@ -64,12 +68,22 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
         code_hash,
         ..AccountRlp::default()
     };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
 
     let state_trie_before = {
         let mut children = core::array::from_fn(|_| Node::Empty.into());
         children[beneficiary_nibbles.get_nibble(0) as usize] = Node::Leaf {
             nibbles: beneficiary_nibbles.truncate_n_nibbles_front(1),
             value: rlp::encode(&beneficiary_account_before).to_vec(),
+        }
+        .into();
+        children[base_beneficiary_nibbles.get_nibble(0) as usize] = Node::Leaf {
+            nibbles: beneficiary_nibbles.truncate_n_nibbles_front(1),
+            value: rlp::encode(&base_beneficiary_account_before).to_vec(),
         }
         .into();
         children[sender_nibbles.get_nibble(0) as usize] = Node::Leaf {
@@ -105,6 +119,8 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_base_beneficiary: Address::from(base_beneficiary),
+        block_l1_beneficiary: Default::default(),
         block_difficulty: 0x20000.into(),
         block_number: 1.into(),
         block_chain_id: 1.into(),
@@ -125,6 +141,11 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
             nonce: 1.into(),
             ..AccountRlp::default()
         };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0xd34aau64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
         let sender_account_after = AccountRlp {
             balance: sender_account_before.balance - value - gas_used * 10,
             nonce: sender_account_before.nonce + 1,
@@ -139,6 +160,11 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
         children[beneficiary_nibbles.get_nibble(0) as usize] = Node::Leaf {
             nibbles: beneficiary_nibbles.truncate_n_nibbles_front(1),
             value: rlp::encode(&beneficiary_account_after).to_vec(),
+        }
+        .into();
+        children[base_beneficiary_nibbles.get_nibble(0) as usize] = Node::Leaf {
+            nibbles: base_beneficiary_nibbles.truncate_n_nibbles_front(1),
+            value: rlp::encode(&base_beneficiary_account_after).to_vec(),
         }
         .into();
         children[sender_nibbles.get_nibble(0) as usize] = Node::Leaf {
@@ -195,6 +221,7 @@ fn test_basic_smart_contract() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

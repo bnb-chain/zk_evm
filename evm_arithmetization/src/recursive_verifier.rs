@@ -376,10 +376,18 @@ pub(crate) fn get_memory_extra_looking_sum_circuit<F: RichField + Extendable<D>,
         ),
     ];
 
-    let beneficiary_random_base_fee_cur_hash_fields: [(GlobalMetadata, &[Target]); 4] = [
+    let beneficiary_random_base_fee_cur_hash_fields: [(GlobalMetadata, &[Target]); 7] = [
         (
             GlobalMetadata::BlockBeneficiary,
             &public_values.block_metadata.block_beneficiary,
+        ),
+        (
+            GlobalMetadata::BlockL1Beneficiary,
+            &public_values.block_metadata.block_l1_beneficiary,
+        ),
+        (
+            GlobalMetadata::BlockBaseBeneficiary,
+            &public_values.block_metadata.block_base_beneficiary,
         ),
         (
             GlobalMetadata::BlockRandom,
@@ -392,6 +400,10 @@ pub(crate) fn get_memory_extra_looking_sum_circuit<F: RichField + Extendable<D>,
         (
             GlobalMetadata::BlockCurrentHash,
             &public_values.block_hashes.cur_hash,
+        ),
+        (
+            GlobalMetadata::BlockGasUsedL1,
+            &public_values.extra_block_data.gas_used_l1,
         ),
     ];
 
@@ -585,6 +597,8 @@ pub(crate) fn add_virtual_block_metadata<F: RichField + Extendable<D>, const D: 
     builder: &mut CircuitBuilder<F, D>,
 ) -> BlockMetadataTarget {
     let block_beneficiary = builder.add_virtual_public_input_arr();
+    let block_l1_beneficiary = builder.add_virtual_public_input_arr();
+    let block_base_beneficiary = builder.add_virtual_public_input_arr();
     let block_timestamp = builder.add_virtual_public_input();
     let block_number = builder.add_virtual_public_input();
     let block_difficulty = builder.add_virtual_public_input();
@@ -596,6 +610,8 @@ pub(crate) fn add_virtual_block_metadata<F: RichField + Extendable<D>, const D: 
     let block_bloom = builder.add_virtual_public_input_arr();
     BlockMetadataTarget {
         block_beneficiary,
+        block_l1_beneficiary,
+        block_base_beneficiary,
         block_timestamp,
         block_number,
         block_difficulty,
@@ -626,12 +642,14 @@ pub(crate) fn add_virtual_extra_block_data<F: RichField + Extendable<D>, const D
     let txn_number_after = builder.add_virtual_public_input();
     let gas_used_before = builder.add_virtual_public_input();
     let gas_used_after = builder.add_virtual_public_input();
+    let gas_used_l1 = builder.add_virtual_public_input_arr();
     ExtraBlockDataTarget {
         checkpoint_state_trie_root,
         txn_number_before,
         txn_number_after,
         gas_used_before,
         gas_used_after,
+        gas_used_l1,
     }
 }
 
@@ -755,6 +773,25 @@ where
             .try_into()
             .unwrap();
     witness.set_target_arr(&block_metadata_target.block_beneficiary, &beneficiary_limbs);
+    let beneficiary_l1_limbs: [F; 5] = u256_limbs::<F>(U256::from_big_endian(
+        &block_metadata.block_l1_beneficiary.0,
+    ))[..5]
+        .try_into()
+        .unwrap();
+    witness.set_target_arr(
+        &block_metadata_target.block_l1_beneficiary,
+        &beneficiary_l1_limbs,
+    );
+    let beneficiary_base_limbs: [F; 5] = u256_limbs::<F>(U256::from_big_endian(
+        &block_metadata.block_base_beneficiary.0,
+    ))[..5]
+        .try_into()
+        .unwrap();
+    witness.set_target_arr(
+        &block_metadata_target.block_base_beneficiary,
+        &beneficiary_base_limbs,
+    );
+
     witness.set_target(
         block_metadata_target.block_timestamp,
         u256_to_u32(block_metadata.block_timestamp)?,
@@ -838,6 +875,10 @@ where
     );
     witness.set_target(ed_target.gas_used_before, u256_to_u32(ed.gas_used_before)?);
     witness.set_target(ed_target.gas_used_after, u256_to_u32(ed.gas_used_after)?);
+    // l1fee fits in 2 limbs
+    let l1fee = u256_to_u64(ed.gas_used_l1)?;
+    witness.set_target(ed_target.gas_used_l1[0], l1fee.0);
+    witness.set_target(ed_target.gas_used_l1[1], l1fee.1);
 
     Ok(())
 }

@@ -32,13 +32,17 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("2adc25665018aa1fe0e6bc666dac8fc2697ff9ba");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("a94f5374fce5edbc8e2a8697c15331677e6ebf0b");
     let to = hex!("1000000000000000000000000000000000000000");
 
     let beneficiary_state_key = keccak(beneficiary);
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_hashed = keccak(to);
 
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let beneficiary_nibbles = Nibbles::from_bytes_be(beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_hashed.as_bytes()).unwrap();
@@ -64,6 +68,11 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
         nonce: 1.into(),
         ..AccountRlp::default()
     };
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
     let sender_account_before = AccountRlp {
         balance: 0x3635c9adc5dea00000u128.into(),
         ..AccountRlp::default()
@@ -78,6 +87,10 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
     )?;
+    let _ = state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    );
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
     state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec())?;
 
@@ -94,6 +107,8 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Address::zero(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_difficulty: 0x20000.into(),
         block_number: 1.into(),
         block_chain_id: 1.into(),
@@ -130,6 +145,15 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
             ..AccountRlp::default()
         };
         let mut expected_state_trie_after = HashedPartialTrie::from(Node::Empty);
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x66dc8u64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let _ = expected_state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
+        );
         expected_state_trie_after.insert(
             beneficiary_nibbles,
             rlp::encode(&beneficiary_account_after).to_vec(),
@@ -177,6 +201,7 @@ fn self_balance_gas_cost() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);
