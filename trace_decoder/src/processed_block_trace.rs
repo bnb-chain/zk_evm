@@ -1,8 +1,35 @@
-use ethereum_types::{Address, U256};
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::iter::once;
+
+use ethereum_types::{Address, H256, U256};
+use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
+use evm_arithmetization::GenerationInputs;
+use mpt_trie::nibbles::Nibbles;
+use mpt_trie::partial_trie::{HashedPartialTrie, PartialTrie};
+
+use crate::compact::compact_prestate_processing::{
+    process_compact_prestate_debug, CompactParsingError, CompactParsingResult,
+    PartialTriePreImages, ProcessedCompactOutput,
+};
+use crate::decoding::{TraceParsingError, TraceParsingResult};
+use crate::trace_protocol::{
+    BlockTrace, BlockTraceTriePreImages, CombinedPreImages, ContractCodeUsage,
+    SeparateStorageTriesPreImage, SeparateTriePreImage, SeparateTriePreImages, TrieCompact,
+    TrieUncompressed, TxnInfo,
+};
+use crate::types::{
+    CodeHash, CodeHashResolveFunc, HashedAccountAddr, HashedNodeAddr, HashedStorageAddrNibbles,
+    OtherBlockData, TrieRootHash, EMPTY_CODE_HASH, EMPTY_TRIE_HASH,
+};
+use crate::utils::{
+    hash, print_value_and_hash_nodes_of_storage_trie, print_value_and_hash_nodes_of_trie,
+};
 
 #[derive(Debug)]
-pub(crate) struct ProcessedBlockTrace<T> {
-    pub(crate) spec: T,
+pub(crate) struct ProcessedBlockTrace {
+    pub(crate) tries: PartialTriePreImages,
+    pub(crate) txn_info: Vec<ProcessedTxnInfo>,
     pub(crate) withdrawals: Vec<(Address, U256)>,
 }
 
@@ -68,7 +95,7 @@ impl BlockTrace {
 
         let last_tx_idx = self.txn_info.len().saturating_sub(1);
 
-        let txn_info = self
+        let mut txn_info = self
             .txn_info
             .into_iter()
             .enumerate()
@@ -91,6 +118,10 @@ impl BlockTrace {
                 )
             })
             .collect::<Vec<_>>();
+
+        while txn_info.len() < 2 {
+            txn_info.insert(0, ProcessedTxnInfo::default());
+        }
 
         Ok(ProcessedBlockTrace {
             tries: pre_image_data.tries,
@@ -222,7 +253,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct ProcessedTxnInfo {
     pub(crate) nodes_used_by_txn: NodesUsedByTxn,
     pub(crate) contract_code_accessed: HashMap<CodeHash, Vec<u8>>,

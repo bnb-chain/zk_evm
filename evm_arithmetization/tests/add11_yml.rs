@@ -2,12 +2,16 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 
-use env_logger::{try_init_from_env, Env, DEFAULT_FILTER_ENV};
 use ethereum_types::{Address, BigEndianHash, H256};
 use evm_arithmetization::generation::mpt::{AccountRlp, LegacyReceiptRlp};
 use evm_arithmetization::generation::{GenerationInputs, TrieInputs};
 use evm_arithmetization::proof::{BlockHashes, BlockMetadata, TrieRoots};
 use evm_arithmetization::prover::prove;
+use evm_arithmetization::testing_utils::{
+    beacon_roots_account_nibbles, beacon_roots_contract_from_storage, ger_account_nibbles,
+    init_logger, preinitialized_state_and_storage_tries, update_beacon_roots_account_storage,
+    GLOBAL_EXIT_ROOT_ACCOUNT,
+};
 use evm_arithmetization::verifier::verify_proof;
 use evm_arithmetization::{AllStark, Node, StarkConfig};
 use hex_literal::hex;
@@ -53,10 +57,6 @@ fn add11_yml() -> anyhow::Result<()> {
     let code = [0x60, 0x01, 0x60, 0x01, 0x01, 0x60, 0x00, 0x55, 0x00];
     let code_hash = keccak(code);
 
-    let mut contract_code = HashMap::new();
-    contract_code.insert(keccak(vec![]), vec![]);
-    contract_code.insert(code_hash, code.to_vec());
-
     let beneficiary_account_before = AccountRlp {
         nonce: 1.into(),
         ..AccountRlp::default()
@@ -80,34 +80,62 @@ fn add11_yml() -> anyhow::Result<()> {
         ..AccountRlp::default()
     };
 
-    let mut state_trie_before = HashedPartialTrie::from(Node::Empty);
-    let _ = state_trie_before.insert(
+    let (mut state_trie_before, mut storage_tries) = preinitialized_state_and_storage_tries()?;
+    let mut beacon_roots_account_storage = storage_tries[0].1.clone();
+    state_trie_before.insert(
         beneficiary_nibbles,
         rlp::encode(&beneficiary_account_before).to_vec(),
-    );
-    let _ = state_trie_before.insert(
+    )?;
+    state_trie_before.insert(
         l1_beneficiary_nibbles,
         rlp::encode(&l1_beneficiary_account_before).to_vec(),
-    );
-    let _ = state_trie_before.insert(
+    )?;
+    state_trie_before.insert(
         base_beneficiary_nibbles,
         rlp::encode(&base_beneficiary_account_before).to_vec(),
-    );
-    let _ = state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec());
-    let _ = state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec());
+    )?;
+    state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
+    state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec())?;
+
+    storage_tries.push((to_hashed, Node::Empty.into()));
 
     let tries_before = TrieInputs {
         state_trie: state_trie_before,
         transactions_trie: Node::Empty.into(),
         receipts_trie: Node::Empty.into(),
-        storage_tries: vec![(to_hashed, Node::Empty.into())],
+        storage_tries,
     };
 
     let txn = hex!("f863800a83061a8094095e7baea6a6c7c4c2dfeb977efac326af552d87830186a0801ba0ffb600e63115a7362e7811894a91d8ba4330e526f22121c994c4692035dfdfd5a06198379fcac8de3dbfac48b165df4bf88e2088f294b61efb9a65fe2281c76e16");
 
-    let gas_used = 0xa868u64.into();
+    let block_metadata = BlockMetadata {
+        block_beneficiary: Address::from(beneficiary),
+        block_l1_beneficiary: Address::from(l1_beneficiary),
+        block_base_beneficiary: Address::from(base_beneficiary),
+        block_timestamp: 0x03e8.into(),
+        block_number: 1.into(),
+        block_difficulty: 0x020000.into(),
+        block_random: H256::from_uint(&0x020000.into()),
+        block_gaslimit: 0xff112233u32.into(),
+        block_chain_id: 1.into(),
+        block_base_fee: 0xa.into(),
+        block_gas_used: 0xa868u64.into(),
+        ..Default::default()
+    };
+
+    let mut contract_code = HashMap::new();
+    contract_code.insert(keccak(vec![]), vec![]);
+    contract_code.insert(code_hash, code.to_vec());
 
     let expected_state_trie_after = {
+        update_beacon_roots_account_storage(
+            &mut beacon_roots_account_storage,
+            block_metadata.block_timestamp,
+            block_metadata.parent_beacon_block_root,
+        )?;
+        let beacon_roots_account =
+            beacon_roots_contract_from_storage(&beacon_roots_account_storage);
+
         let beneficiary_account_after = AccountRlp {
             nonce: 1.into(),
             ..AccountRlp::default()
@@ -139,35 +167,44 @@ fn add11_yml() -> anyhow::Result<()> {
         };
 
         let mut expected_state_trie_after = HashedPartialTrie::from(Node::Empty);
-        let _ = expected_state_trie_after.insert(
+        expected_state_trie_after.insert(
             beneficiary_nibbles,
             rlp::encode(&beneficiary_account_after).to_vec(),
-        );
-        let _ = expected_state_trie_after.insert(
+        )?;
+        expected_state_trie_after.insert(
             l1_beneficiary_nibbles,
             rlp::encode(&l1_beneficiary_account_after).to_vec(),
-        );
-        let _ = expected_state_trie_after.insert(
+        )?;
+        expected_state_trie_after.insert(
             base_beneficiary_nibbles,
             rlp::encode(&base_beneficiary_account_after).to_vec(),
-        );
-        let _ = expected_state_trie_after
-            .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec());
-        let _ =
-            expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec());
+        )?;
+        expected_state_trie_after
+            .insert(sender_nibbles, rlp::encode(&sender_account_after).to_vec())?;
+        expected_state_trie_after.insert(to_nibbles, rlp::encode(&to_account_after).to_vec())?;
+        expected_state_trie_after.insert(
+            beacon_roots_account_nibbles(),
+            rlp::encode(&beacon_roots_account).to_vec(),
+        )?;
+        expected_state_trie_after.insert(
+            ger_account_nibbles(),
+            rlp::encode(&GLOBAL_EXIT_ROOT_ACCOUNT).to_vec(),
+        )?;
+
         expected_state_trie_after
     };
+
     let receipt_0 = LegacyReceiptRlp {
         status: true,
-        cum_gas_used: gas_used,
+        cum_gas_used: 0xa868u64.into(),
         bloom: vec![0; 256].into(),
         logs: vec![],
     };
     let mut receipts_trie = HashedPartialTrie::from(Node::Empty);
-    let _ = receipts_trie.insert(
+    receipts_trie.insert(
         Nibbles::from_str("0x80").unwrap(),
         rlp::encode(&receipt_0).to_vec(),
-    );
+    )?;
     let transactions_trie: HashedPartialTrie = Node::Leaf {
         nibbles: Nibbles::from_str("0x80").unwrap(),
         value: txn.to_vec(),
@@ -179,33 +216,18 @@ fn add11_yml() -> anyhow::Result<()> {
         transactions_root: transactions_trie.hash(),
         receipts_root: receipts_trie.hash(),
     };
-
-    let block_metadata = BlockMetadata {
-        block_beneficiary: Address::from(beneficiary),
-        block_l1_beneficiary: Address::from(l1_beneficiary),
-        block_base_beneficiary: Address::from(base_beneficiary),
-        block_timestamp: 0x03e8.into(),
-        block_number: 1.into(),
-        block_difficulty: 0x020000.into(),
-        block_random: H256::from_uint(&0x020000.into()),
-        block_gaslimit: 0xff112233u32.into(),
-        block_chain_id: 1.into(),
-        block_base_fee: 0xa.into(),
-        block_gas_used: gas_used,
-        block_bloom: [0.into(); 8],
-    };
-
     let inputs = GenerationInputs {
         signed_txn: Some(txn.to_vec()),
         withdrawals: vec![],
+        global_exit_roots: vec![],
         tries: tries_before,
         trie_roots_after,
-        contract_code: contract_code.clone(),
+        contract_code,
         block_metadata,
         checkpoint_state_trie_root: HashedPartialTrie::from(Node::Empty).hash(),
         txn_number_before: 0.into(),
         gas_used_before: 0.into(),
-        gas_used_after: gas_used,
+        gas_used_after: 0xa868u64.into(),
         block_hashes: BlockHashes {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
@@ -218,8 +240,4 @@ fn add11_yml() -> anyhow::Result<()> {
     timing.filter(Duration::from_millis(100)).print();
 
     verify_proof(&all_stark, proof, &config)
-}
-
-fn init_logger() {
-    let _ = try_init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
 }

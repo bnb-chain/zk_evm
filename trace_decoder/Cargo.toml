@@ -27,13 +27,12 @@ serde_with = "3.4.0"
 thiserror = { workspace = true }
 
 # Local dependencies
-mpt_trie = { version = "0.2.1", path = "../mpt_trie" }
-
-evm_arithmetization_mpt = { package = "evm_arithmetization", version = "0.1.3", path = "../evm_arithmetization" }
-evm_arithmetization_smt = { package = "evm_arithmetization", version = "0.1.2", git = "https://github.com/0xPolygonZero/zk_evm.git", branch = "feat_type2_hack" }
+mpt_trie = { version = "0.3.0", path = "../mpt_trie" }
+evm_arithmetization = { version = "0.2.0", path = "../evm_arithmetization" }
 
 [dev-dependencies]
 criterion = "0.5.1"
+plonky2 = { workspace = true }
 pretty_env_logger = "0.5.0"
 serde_json = { workspace = true }
 

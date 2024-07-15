@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::anyhow;
 use ethereum_types::{Address, BigEndianHash, H256, U256};
-use log::log_enabled;
+use log::{error, log_enabled};
 use mpt_trie::partial_trie::{HashedPartialTrie, PartialTrie};
 use plonky2::field::extension::Extendable;
 use plonky2::field::polynomial::PolynomialValues;
@@ -57,6 +57,8 @@ pub struct GenerationInputs {
     /// Withdrawal pairs `(addr, amount)`. At the end of the txs, `amount` is
     /// added to `addr`'s balance. See EIP-4895.
     pub withdrawals: Vec<(Address, U256)>,
+    /// Global exit roots pairs `(timestamp, root)`.
+    pub global_exit_roots: Vec<(U256, H256)>,
     pub tries: TrieInputs,
     /// Expected trie roots after the transactions are executed.
     pub trie_roots_after: TrieRoots,
@@ -137,6 +139,18 @@ fn apply_metadata_and_tries_memops<F: RichField + Extendable<D>, const D: usize>
             h2u(inputs.block_hashes.cur_hash),
         ),
         (GlobalMetadata::BlockGasUsed, metadata.block_gas_used),
+        (
+            GlobalMetadata::BlockBlobGasUsed,
+            metadata.block_blob_gas_used,
+        ),
+        (
+            GlobalMetadata::BlockExcessBlobGas,
+            metadata.block_excess_blob_gas,
+        ),
+        (
+            GlobalMetadata::ParentBeaconBlockRoot,
+            h2u(metadata.parent_beacon_block_root),
+        ),
         (GlobalMetadata::BlockGasUsedBefore, inputs.gas_used_before),
         (GlobalMetadata::BlockGasUsedAfter, inputs.gas_used_after),
         (GlobalMetadata::BlockGasUsedL1, inputs.gas_used_l1),
@@ -336,6 +350,7 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
     if label.contains("check_state_trie")
         || label.contains("check_txn_trie")
         || label.contains("check_receipt_trie")
+        || !label.is_empty()
     {
         let state_trie_ptr = u256_to_usize(
             state
@@ -343,10 +358,10 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::StateTrieRoot),
         )
         .map_err(|_| anyhow!("State trie pointer is too large to fit in a usize."))?;
-        log::debug!(
-            "Computed state trie: {:?}",
-            get_state_trie::<HashedPartialTrie>(&state.memory, state_trie_ptr)
-        );
+        // log::debug!(
+        //     "Computed state trie: {:?}",
+        //     get_state_trie::<HashedPartialTrie>(&state.memory, state_trie_ptr)
+        // );
 
         let txn_trie_ptr = u256_to_usize(
             state
@@ -354,10 +369,10 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::TransactionTrieRoot),
         )
         .map_err(|_| anyhow!("Transactions trie pointer is too large to fit in a usize."))?;
-        log::debug!(
-            "Computed transactions trie: {:?}",
-            get_txn_trie::<HashedPartialTrie>(&state.memory, txn_trie_ptr)
-        );
+        // log::debug!(
+        //     "Computed transactions trie: {:?}",
+        //     get_txn_trie::<HashedPartialTrie>(&state.memory, txn_trie_ptr)
+        // );
 
         let receipt_trie_ptr = u256_to_usize(
             state
@@ -365,7 +380,11 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::ReceiptTrieRoot),
         )
         .map_err(|_| anyhow!("Receipts trie pointer is too large to fit in a usize."))?;
-        log::debug!(
+        // log::debug!(
+        //     "Computed receipts trie: {:?}",
+        //     get_receipt_trie::<HashedPartialTrie>(&state.memory, receipt_trie_ptr)
+        // );
+        println!(
             "Computed receipts trie: {:?}",
             get_receipt_trie::<HashedPartialTrie>(&state.memory, receipt_trie_ptr)
         );

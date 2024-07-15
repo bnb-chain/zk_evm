@@ -152,3 +152,6 @@ jobs:
 
       - name: Run cargo clippy
         run: cargo clippy --all-features --all-targets -- -D warnings -A incomplete-features -A clippy::doc_lazy_continuation
+
+      - name: Rustdoc
+        run: cargo doc --all

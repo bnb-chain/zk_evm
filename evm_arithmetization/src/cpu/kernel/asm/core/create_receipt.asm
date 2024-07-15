@@ -2,6 +2,9 @@
 // Post stack: new_cum_gas, txn_nb
 // A receipt is stored in MPT_TRIE_DATA as:
 // [payload_len, status, cum_gas_used, bloom, logs_payload_len, num_logs, [logs]]
+// [payload_len, status, cum_gas_used, bloom, logs_payload_len, num_logs, [logs], deposit_nonce, deposit_receipt_version] for type 126 tx
+// Each log is written in MPT_TRIE_DATA as:
+// [payload_len, address, num_topics, [topics], data_len, [data]].
 //
 // In this function, we:
 // - compute cum_gas, 
@@ -50,19 +53,38 @@ process_receipt_after_bloom:
     %mload_global_metadata(@GLOBAL_METADATA_LOGS_PAYLOAD_LEN)
     %rlp_list_len
     ADD
-    // stack: payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
-    // Now we can write the receipt in MPT_TRIE_DATA.
-    %get_trie_data_size
-    // stack: receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
-    // Write transaction type if necessary. The address INITIAL_TXN_RLP_ADDR contains the current transaction type.
     PUSH @INITIAL_TXN_RLP_ADDR
     MLOAD_GENERAL
+    // stack: first_txn_byte, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // check additional field
+    DUP1 %eq_const(126) %jumpi(process_type126_length)
+    SWAP1
+    // stack: payload_len, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+
+process_receipt_after_payload_length:
+    // stack: payload_len, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+//     // stack: payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // Now we can write the receipt in MPT_TRIE_DATA.
+    %get_trie_data_size
+    // stack: receipt_ptr, payload_len, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    SWAP1
+    // stack: payload_len, receipt_ptr, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    SWAP2
     // stack: first_txn_byte, receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+
+//     // stack: receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+//     // Write transaction type if necessary. The address INITIAL_TXN_RLP_ADDR contains the current transaction type.
+//     PUSH @INITIAL_TXN_RLP_ADDR
+//     MLOAD_GENERAL
+//     // stack: first_txn_byte, receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
     DUP1 %eq_const(1) %jumpi(receipt_nonzero_type)
     DUP1 %eq_const(2) %jumpi(receipt_nonzero_type)
+    DUP1 %eq_const(3) %jumpi(receipt_nonzero_type)
     DUP1 %eq_const(126) %jumpi(receipt_nonzero_type)
     // If we are here, we are dealing with a legacy transaction, and we do not need to write the type.
+    // stack: first_txn_byte, receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
     POP
+    // stack: receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
 
 process_receipt_after_type:
     // stack: receipt_ptr, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
@@ -111,7 +133,8 @@ process_receipt_logs_loop:
     DUP2 DUP2
     EQ
     // stack: i == num_logs, i, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
-    %jumpi(process_receipt_after_write)
+//    %jumpi(process_receipt_after_write)
+    %jumpi(process_type126_additional_fields)
     // stack: i, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
     DUP1
     %mload_kernel(@SEGMENT_LOGS)
@@ -198,6 +221,36 @@ process_receipt_data_end:
     %increment
     %jump(process_receipt_logs_loop)
 
+process_type126_length:
+    // stack: first_txn_byte, payload_len, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    SWAP1
+    // stack: payload_len, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // Compute length of deposit_nonce len
+    %blocknumber %rlp_scalar_len ADD
+    // %add_const(5) // TODO
+    // Compute length of deposit_receipt_version
+    %add_const(1)
+    // stack: payload_len, first_txn_byte, status, new_cum_gas, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    %jump(process_receipt_after_payload_length)
+process_type126_additional_fields:
+    // stack: num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    PUSH @INITIAL_TXN_RLP_ADDR
+    MLOAD_GENERAL
+    // stack: first_txn_byte, num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // skip if not type 126 receipt
+    %jump_neq_const(126, process_receipt_after_write)
+    // stack: num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // Write deposit_nonce.
+    %blocknumber
+    // stack: deposit_nonce, num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    %append_to_trie_data
+    // stack: num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // Write deposit_receipt_version.
+    PUSH 1 // from tx "0xbdcbda0ccec1e053b8b7be12adf9cad91be36bd945c1f5d5a61be0cdafb87226"
+    %append_to_trie_data
+    // stack: num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
+    // %jump(process_receipt_after_write)
+
 process_receipt_after_write:
     // stack: num_logs, num_logs, receipt_ptr, txn_nb, new_cum_gas, txn_nb, num_nibbles, retdest
     %pop2
@@ -205,6 +258,7 @@ process_receipt_after_write:
     SWAP1
     // stack: txn_nb, receipt_ptr, new_cum_gas, txn_nb, num_nibbles, retdest
     DUP5
+    // stack: num_nibbles, txn_nb, receipt_ptr, new_cum_gas, txn_nb, num_nibbles, retdest
     %mpt_insert_receipt_trie
     // stack: new_cum_gas, txn_nb, num_nibbles, retdest
 

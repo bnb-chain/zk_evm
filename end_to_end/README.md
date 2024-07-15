@@ -16,25 +16,29 @@ rustup update
 
 ## Run example
 
-### Get Witness from RPC and Run Prover
+### Fetch Witness from RPC
 
 ```shell
+#export BLOCK_NUMBER=114165247 # op
 #export BLOCK_NUMBER=25569387
-export BLOCK_NUMBER=114165247
-rm dump/trace_diffmode*.json
-rm dump/trace_prestatemode*.json
+export BLOCK_NUMBER=30933580
+export RPC=OPBNB_TESTNET
 rm witness/test_witness_$BLOCK_NUMBER.json
 rm log/output.log
-RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
+FETCH_WITNESS=1 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
 
 ### Run Prover with Witness from Dump
 
 ```shell
-export BLOCK_NUMBER=114165247
-rm witness/test_witness_$BLOCK_NUMBER.json
+# export BLOCK_NUMBER=32536652
+export BLOCK_NUMBER=27954261
+export RPC=OPBNB_MAINNET
+# rm witness/test_witness_$BLOCK_NUMBER.json
 rm log/output.log
-RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
+# FETCH_WITNESS=1 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
+# RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
+RUN_PROVER=1 RUST_LOG=trace RUST_BACKTRACE=full cargo run --release --package end_to_end
 ```
 
 ### Run Prover with Existing Witness

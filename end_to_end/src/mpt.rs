@@ -1,6 +1,5 @@
 #![allow(missing_docs)]
 use std::collections::{BTreeMap, HashMap};
-use std::ptr::null;
 use std::sync::Arc;
 
 use ethers::prelude::*;
@@ -16,7 +15,7 @@ use mpt_trie::trie_subsets::create_trie_subset;
 use ethers::abi::AbiEncode;
 use std::cmp::Ordering;
 
-use crate::utils::{keccak, EMPTY_HASH};
+use crate::utils::{keccak, EMPTY_HASH, BEACON_ADDR};
 
 #[derive(Clone, Debug)]
 pub struct MptNode(pub Vec<u8>);
@@ -173,6 +172,54 @@ impl Mpt {
                 }
                 .into()
             }
+            2 => match a[0][0] >> 4 {
+                0 => {
+                    let ext_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                    Node::Extension {
+                        nibbles: ext_prefix,
+                        child: Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                        )),
+                    }
+                    .into()
+                }
+                1 => {
+                    let b = a[0][0] & 0xf;
+                    let mut ext_prefix = if a[0].len() > 1 {
+                        Nibbles::from_bytes_be(&a[0][1..]).unwrap()
+                    } else {
+                        Nibbles::default() // count = 0
+                    };
+                    ext_prefix.push_nibble_front(b);
+                    Node::Extension {
+                        nibbles: ext_prefix,
+                        child: Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                        )),
+                    }
+                    .into()
+                }
+                2 => {
+                    let leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                    Node::Leaf {
+                        nibbles: leaf_prefix,
+                        value: a[1].clone(),
+                    }
+                    .into()
+                }
+                3 => {
+                    let b = a[0][0] & 0xf;
+                    let mut leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                    leaf_prefix.push_nibble_front(b);
+                    Node::Leaf {
+                        nibbles: leaf_prefix,
+                        value: a[1].clone(),
+                    }
+                    .into()
+                }
+                _ => panic!("wtf?"),
+            },
+            _ => panic!("wtf?"),
         }
         
     }
@@ -246,10 +293,8 @@ fn nibbles_from_hex_prefix_encoding(b: &[u8]) -> Nibbles {
     }
 }
 
-pub fn get_account_storage_post(
-    address: H160,
-    diff: &DiffMode) -> Option<AccountState> {
-     diff.post.get(&address).cloned()
+pub fn get_account_storage_post(address: H160, diff: &DiffMode) -> Option<AccountState> {
+    diff.post.get(&address).cloned()
 }
 
 pub fn apply_diffs(
@@ -397,7 +442,9 @@ pub fn trim(
     has_storage_deletion: bool,
 ) -> (HashedPartialTrie, HashMap<H256, HashedPartialTrie>) {
     let tok = |addr: &Address| Nibbles::from_bytes_be(&keccak(addr.0)).unwrap();
-    let keys = touched.keys().map(tok).collect::<Vec<_>>();
+    let mut keys = touched.keys().map(tok).collect::<Vec<_>>();
+    let beacon_acc_key = Nibbles::from_bytes_be(&keccak(BEACON_ADDR.0)).unwrap();
+    keys.push(beacon_acc_key);
     let new_state_trie = create_trie_subset(&trie, keys).unwrap();
     if has_storage_deletion {
         // TODO: This is inefficient. Replace with a smarter solution.

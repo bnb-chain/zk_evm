@@ -5,11 +5,9 @@
 
 // TODO TODO TODO unconditional mint value
 global process_type_126_txn:
-    // stack: retdest
+    // stack: rlp_addr, retdest
     // Initial rlp address offset of 1 (skipping over the 0x7e byte)
-    PUSH 1
-    PUSH @INITIAL_TXN_RLP_ADDR
-    %build_kernel_address
+    %add_const(1)
     // stack: rlp_addr, retdest
     %decode_rlp_list_len
     // We don't actually need the length.

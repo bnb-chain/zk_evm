@@ -1,7 +1,6 @@
 use core::fmt::Debug;
 
 use ethereum_types::U256;
-use plonky2_util::log2_ceil;
 
 /// Enumerate the length `W` windows of `vec`, and run `maybe_replace` on each
 /// one.

@@ -189,6 +189,12 @@ pub struct BlockMetadata {
     pub block_base_fee: U256,
     /// The total gas used in this block. It must fit in a `u32`.
     pub block_gas_used: U256,
+    /// The blob gas used. It must fit in a `u64`.
+    pub block_blob_gas_used: U256,
+    /// The excess blob base. It must fit in a `u64`.
+    pub block_excess_blob_gas: U256,
+    /// The hash tree root of the parent beacon block.
+    pub parent_beacon_block_root: H256,
     /// The block bloom of this block, represented as the consecutive
     /// 32-byte chunks of a block's final bloom filter string.
     pub block_bloom: [U256; 8],
@@ -210,7 +216,13 @@ impl BlockMetadata {
         let block_base_fee =
             (pis[28].to_canonical_u64() + (pis[29].to_canonical_u64() << 32)).into();
         let block_gas_used = pis[30].to_canonical_u64().into();
-        let block_bloom = core::array::from_fn(|i| h2u(get_h256(&pis[31 + 8 * i..39 + 8 * i])));
+        let block_blob_gas_used =
+            (pis[31].to_canonical_u64() + (pis[32].to_canonical_u64() << 32)).into();
+        let block_excess_blob_gas =
+            (pis[33].to_canonical_u64() + (pis[34].to_canonical_u64() << 32)).into();
+        let parent_beacon_block_root = get_h256(&pis[35..43]);
+        let block_bloom =
+            core::array::from_fn(|i| h2u(get_h256(&pis[43 + 8 * i..43 + 8 * (i + 1)])));
 
         Self {
             block_beneficiary,
@@ -224,6 +236,9 @@ impl BlockMetadata {
             block_chain_id,
             block_base_fee,
             block_gas_used,
+            block_blob_gas_used,
+            block_excess_blob_gas,
+            parent_beacon_block_root,
             block_bloom,
         }
     }
@@ -324,10 +339,15 @@ impl PublicValuesTarget {
             block_chain_id,
             block_base_fee,
             block_gas_used,
+            block_blob_gas_used,
+            block_excess_blob_gas,
+            parent_beacon_block_root,
             block_bloom,
         } = self.block_metadata;
 
         buffer.write_target_array(&block_beneficiary)?;
+        buffer.write_target_array(&block_l1_beneficiary)?;
+        buffer.write_target_array(&block_base_beneficiary)?;
         buffer.write_target(block_timestamp)?;
         buffer.write_target(block_number)?;
         buffer.write_target(block_difficulty)?;
@@ -336,6 +356,9 @@ impl PublicValuesTarget {
         buffer.write_target(block_chain_id)?;
         buffer.write_target_array(&block_base_fee)?;
         buffer.write_target(block_gas_used)?;
+        buffer.write_target_array(&block_blob_gas_used)?;
+        buffer.write_target_array(&block_excess_blob_gas)?;
+        buffer.write_target_array(&parent_beacon_block_root)?;
         buffer.write_target_array(&block_bloom)?;
 
         let BlockHashesTarget {
@@ -358,6 +381,7 @@ impl PublicValuesTarget {
         buffer.write_target(txn_number_after)?;
         buffer.write_target(gas_used_before)?;
         buffer.write_target(gas_used_after)?;
+        buffer.write_target_array(&gas_used_l1)?;
 
         Ok(())
     }
@@ -388,6 +412,9 @@ impl PublicValuesTarget {
             block_chain_id: buffer.read_target()?,
             block_base_fee: buffer.read_target_array()?,
             block_gas_used: buffer.read_target()?,
+            block_blob_gas_used: buffer.read_target_array()?,
+            block_excess_blob_gas: buffer.read_target_array()?,
+            parent_beacon_block_root: buffer.read_target_array()?,
             block_bloom: buffer.read_target_array()?,
         };
 
@@ -585,21 +612,27 @@ pub struct BlockMetadataTarget {
     pub(crate) block_difficulty: Target,
     /// `Target`s for the `mix_hash` value of this block.
     pub(crate) block_random: [Target; 8],
-    /// `Target`s for the gas limit of this block.
+    /// `Target` for the gas limit of this block.
     pub(crate) block_gaslimit: Target,
     /// `Target` for the chain id of this block.
     pub(crate) block_chain_id: Target,
     /// `Target`s for the base fee of this block.
     pub(crate) block_base_fee: [Target; 2],
-    /// `Target`s for the gas used of this block.
+    /// `Target` for the gas used of this block.
     pub(crate) block_gas_used: Target,
+    /// `Target`s for the total blob gas used of this block.
+    pub(crate) block_blob_gas_used: [Target; 2],
+    /// `Target`s for the excess blob gas of this block.
+    pub(crate) block_excess_blob_gas: [Target; 2],
     /// `Target`s for the block bloom of this block.
+    /// `Target`s for the parent beacon block root.
+    pub(crate) parent_beacon_block_root: [Target; 8],
     pub(crate) block_bloom: [Target; 64],
 }
 
 impl BlockMetadataTarget {
     /// Number of `Target`s required for the block metadata.
-    pub(crate) const SIZE: usize = 95;
+    pub(crate) const SIZE: usize = 107;
 
     /// Extracts block metadata `Target`s from the provided public input
     /// `Target`s. The provided `pis` should start with the block metadata.
@@ -615,7 +648,10 @@ impl BlockMetadataTarget {
         let block_chain_id = pis[27];
         let block_base_fee = pis[28..30].try_into().unwrap();
         let block_gas_used = pis[30];
-        let block_bloom = pis[31..95].try_into().unwrap();
+        let block_blob_gas_used = pis[31..33].try_into().unwrap();
+        let block_excess_blob_gas = pis[33..35].try_into().unwrap();
+        let parent_beacon_block_root = pis[35..43].try_into().unwrap();
+        let block_bloom = pis[43..107].try_into().unwrap();
 
         Self {
             block_beneficiary,
@@ -629,6 +665,9 @@ impl BlockMetadataTarget {
             block_chain_id,
             block_base_fee,
             block_gas_used,
+            block_blob_gas_used,
+            block_excess_blob_gas,
+            parent_beacon_block_root,
             block_bloom,
         }
     }
@@ -675,6 +714,27 @@ impl BlockMetadataTarget {
                 builder.select(condition, bm0.block_base_fee[i], bm1.block_base_fee[i])
             }),
             block_gas_used: builder.select(condition, bm0.block_gas_used, bm1.block_gas_used),
+            block_blob_gas_used: core::array::from_fn(|i| {
+                builder.select(
+                    condition,
+                    bm0.block_blob_gas_used[i],
+                    bm1.block_blob_gas_used[i],
+                )
+            }),
+            block_excess_blob_gas: core::array::from_fn(|i| {
+                builder.select(
+                    condition,
+                    bm0.block_excess_blob_gas[i],
+                    bm1.block_excess_blob_gas[i],
+                )
+            }),
+            parent_beacon_block_root: core::array::from_fn(|i| {
+                builder.select(
+                    condition,
+                    bm0.parent_beacon_block_root[i],
+                    bm1.parent_beacon_block_root[i],
+                )
+            }),
             block_bloom: core::array::from_fn(|i| {
                 builder.select(condition, bm0.block_bloom[i], bm1.block_bloom[i])
             }),
@@ -702,6 +762,18 @@ impl BlockMetadataTarget {
             builder.connect(bm0.block_base_fee[i], bm1.block_base_fee[i])
         }
         builder.connect(bm0.block_gas_used, bm1.block_gas_used);
+        for i in 0..2 {
+            builder.connect(bm0.block_blob_gas_used[i], bm1.block_blob_gas_used[i])
+        }
+        for i in 0..2 {
+            builder.connect(bm0.block_excess_blob_gas[i], bm1.block_excess_blob_gas[i])
+        }
+        for i in 0..8 {
+            builder.connect(
+                bm0.parent_beacon_block_root[i],
+                bm1.parent_beacon_block_root[i],
+            )
+        }
         for i in 0..64 {
             builder.connect(bm0.block_bloom[i], bm1.block_bloom[i])
         }

@@ -20,6 +20,10 @@ pub const EMPTY_HASH: H256 = H256([
     130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
 ]);
 
+// BLOCK_MINER_ADDR : "0x4200000000000000000000000000000000000011"
+pub const BLOCK_MINER_ADDR: Address =
+    H160([66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17]);
+
 // OPTIMISM_L1_BLOCK_ADDR: "0x4200000000000000000000000000000000000015"
 pub const OPTIMISM_L1_BLOCK_ADDR: Address =
     H160([66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21]);
@@ -31,6 +35,11 @@ pub const OPTIMISM_BASE_FEE_ADDR: Address =
 // OPTIMISM_L1_FEE_ADDR: "0x420000000000000000000000000000000000001a"
 pub const OPTIMISM_L1_FEE_ADDR: Address =
     H160([66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 26]);
+
+// beacon_addr: Address = "0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02"
+pub const BEACON_ADDR: Address = H160([
+    0, 15, 61, 246, 215, 50, 128, 126, 241, 49, 159, 183, 184, 187, 133, 34, 208, 190, 172, 2,
+]);
 
 pub fn keccak<T: AsRef<[u8]> + Clone>(bytes: T) -> [u8; 32] {
     keccak256(bytes.clone())

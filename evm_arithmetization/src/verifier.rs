@@ -191,12 +191,24 @@ where
             public_values.block_metadata.block_base_fee,
         ),
         (
+            GlobalMetadata::ParentBeaconBlockRoot,
+            h2u(public_values.block_metadata.parent_beacon_block_root),
+        ),
+        (
             GlobalMetadata::BlockCurrentHash,
             h2u(public_values.block_hashes.cur_hash),
         ),
         (
             GlobalMetadata::BlockGasUsed,
             public_values.block_metadata.block_gas_used,
+        ),
+        (
+            GlobalMetadata::BlockBlobGasUsed,
+            public_values.block_metadata.block_blob_gas_used,
+        ),
+        (
+            GlobalMetadata::BlockExcessBlobGas,
+            public_values.block_metadata.block_excess_blob_gas,
         ),
         (
             GlobalMetadata::TxnNumberBefore,
@@ -294,6 +306,7 @@ where
     running_sum + challenge.combine(row.iter()).inverse()
 }
 
+#[cfg(debug_assertions)]
 pub(crate) mod debug_utils {
     use super::*;
 
@@ -354,6 +367,18 @@ pub(crate) mod debug_utils {
             (
                 GlobalMetadata::BlockGasUsed,
                 public_values.block_metadata.block_gas_used,
+            ),
+            (
+                GlobalMetadata::BlockBlobGasUsed,
+                public_values.block_metadata.block_blob_gas_used,
+            ),
+            (
+                GlobalMetadata::BlockExcessBlobGas,
+                public_values.block_metadata.block_excess_blob_gas,
+            ),
+            (
+                GlobalMetadata::ParentBeaconBlockRoot,
+                h2u(public_values.block_metadata.parent_beacon_block_root),
             ),
             (
                 GlobalMetadata::TxnNumberBefore,

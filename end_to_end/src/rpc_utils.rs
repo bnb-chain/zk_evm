@@ -11,10 +11,16 @@ use ethers::types::Address;
 use evm_arithmetization::proof::{BlockHashes, BlockMetadata};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{convert_bloom, EMPTY_HASH, OPTIMISM_BASE_FEE_ADDR, OPTIMISM_L1_FEE_ADDR};
+use crate::utils::{
+    convert_bloom, BEACON_ADDR, EMPTY_HASH, OPTIMISM_BASE_FEE_ADDR, OPTIMISM_L1_FEE_ADDR,
+};
 
-pub const OPTIMISM_MAINNET_RPC: &str = "https://optimism.blockpi.network/v1/rpc/819c82db086d814fd6f285a392a5c09691e01906";
-pub const OPBNB_TESTNET_RPC: &str = "https://opbnb-testnet.nodereal.io/v1/b1acba7dd0f74d61942619cf09ec30da";
+pub const OPTIMISM_MAINNET_RPC: &str =
+    "https://optimism.blockpi.network/v1/rpc/819c82db086d814fd6f285a392a5c09691e01906";
+pub const OPBNB_TESTNET_RPC: &str =
+    "https://opbnb-testnet.nodereal.io/v1/b1acba7dd0f74d61942619cf09ec30da";
+pub const OPBNB_MAINNET_RPC: &str =
+    "https://opbnb-mainnet.nodereal.io/v1/b1acba7dd0f74d61942619cf09ec30da";
 
 fn address_formatter(address: Address) -> String {
     address
@@ -318,9 +324,6 @@ pub async fn get_proof(
     block_number: U64,
     provider: &Provider<Http>,
 ) -> anyhow::Result<(Vec<Bytes>, Vec<StorageProof>, AccountInfo, bool)> {
-    // tracing::info!("Proof {:?}: {:?} {:?}", block_number, address, locations);
-    // println!("Proof {:?}: {:?} {:?}", block_number, address, locations);
-
     // try load account_info
     let mut account_info: Option<AccountInfo>;
     if let Ok(file) = File::open(format!(
@@ -481,7 +484,10 @@ pub async fn get_block_metadata(
             block_base_fee: block.base_fee_per_gas.unwrap(),
             block_bloom: convert_bloom(block.logs_bloom.unwrap()),
             block_gas_used: block.gas_used,
+            block_blob_gas_used: Default::default(),
+            block_excess_blob_gas: Default::default(),
             block_random: block.mix_hash.unwrap(),
+            parent_beacon_block_root: Default::default(),
         },
         block.state_root,
     ))
@@ -508,4 +514,19 @@ pub async fn get_block_hashes(
         prev_hashes,
         cur_hash,
     })
+}
+
+pub async fn get_beacon_root_proof(
+    block_number: U64,
+    block_timestamp: U256,
+    provider: &Provider<Http>,
+) -> anyhow::Result<(Vec<Bytes>, Vec<StorageProof>, AccountInfo)> {
+    // let locs = (0..8191).collect::<Vec<u64>>().iter().map(|i|
+    // H256::from_low_u64_be(*i)).collect();
+    let slot: H256 = (block_timestamp % 8191).encode_hex().parse().unwrap();
+    let (beacon_account_proof, beacon_storage_proofs, beacon_acc_info, _) =
+        get_proof(BEACON_ADDR, vec![slot], block_number - 1, provider).await?;
+    let _ = get_proof(BEACON_ADDR, vec![], block_number, provider).await;
+
+    Ok((beacon_account_proof, beacon_storage_proofs, beacon_acc_info))
 }
