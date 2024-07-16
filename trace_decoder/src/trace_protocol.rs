@@ -38,10 +38,14 @@ use crate::{
 /// Core payload needed to generate a proof for a block. Note that the scheduler
 /// may need to request some additional data from the client along with this in
 /// order to generate a proof.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BlockTrace {
     /// The trie pre-images (state & storage) in multiple possible formats.
     pub trie_pre_images: TriePreImage,
+
+    /// The code_db is a map of code hashes to the actual code. This is needed
+    /// to execute transactions.
+    pub code_db: Option<HashMap<CodeHash, Vec<u8>>>,
 
     /// Traces and other info per txn. The index of the txn corresponds to the
     /// slot in this vec.
@@ -63,7 +67,7 @@ pub enum TriePreImage {
 }
 
 /// Minimal hashed out tries needed by all txns in the block.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MptBlockTraceTriePreImages {
     /// The trie pre-image with separate state/storage tries.
@@ -82,7 +86,7 @@ pub struct MptSeparateTriePreImages {
 }
 
 /// A trie pre-image where state & storage are separate.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MptSeparateTriePreImage {
     /// Storage or state trie in a bulkier format, that can be processed faster.
@@ -93,7 +97,7 @@ pub enum MptSeparateTriePreImage {
 }
 
 /// A trie pre-image where both state & storage are combined into one payload.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct MptCombinedPreImages {
     /// Compact combined state and storage tries.
@@ -118,7 +122,7 @@ pub struct MptTrieCompact(#[serde_as(as = "FromInto<ByteString>")] pub Vec<u8>);
 pub struct MptTrieDirect(pub HashedPartialTrie);
 
 /// A trie pre-image where state and storage are separate.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MptSeparateStorageTriesPreImage {
     /// A single hash map that contains all node hashes from all storage tries
@@ -162,7 +166,7 @@ pub enum AtomicUnitInfo {
 }
 
 /// Info specific to txns in the block.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxnInfo {
     /// Trace data for the txn. This is used by the protocol to:
     /// - Mutate it's own trie state between txns to arrive at the correct trie
@@ -177,7 +181,7 @@ pub struct TxnInfo {
 
 /// Structure holding metadata for one transaction.
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxnMeta {
     /// Txn byte code.
     #[serde_as(as = "FromInto<ByteString>")]
@@ -203,7 +207,7 @@ pub struct TxnMeta {
 ///
 /// Specifically, since we can not execute the txn before proof generation, we
 /// rely on a separate EVM to run the txn and supply this data for us.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxnTrace {
     /// If the balance changed, then the new balance will appear here. Will be
     /// `None` if no change.
@@ -239,7 +243,7 @@ pub struct TxnTrace {
 
 /// Contract code access type. Used by txn traces.
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContractCodeUsage {
     /// Contract was read.
