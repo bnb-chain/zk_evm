@@ -6,4 +6,3 @@ Cargo.lock
 .idea/
 .vscode
 output.log
-end_to_end/dump*
