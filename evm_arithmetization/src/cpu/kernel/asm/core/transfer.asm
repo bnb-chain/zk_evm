@@ -105,6 +105,10 @@ global add_eth_new_account:
     // stack: key, new_account_ptr, retdest
     %jump(mpt_insert_state_trie)
 
+add_eth_new_account_zero:
+    // stack: addr, amount, retdest
+    %pop2 JUMP
+    
 add_eth_zero_amount:
     // stack: addr, amount, retdest
     %pop2 JUMP
