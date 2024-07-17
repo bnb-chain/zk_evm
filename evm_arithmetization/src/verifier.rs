@@ -155,6 +155,14 @@ where
             U256::from_big_endian(&public_values.block_metadata.block_beneficiary.0),
         ),
         (
+            GlobalMetadata::BlockL1Beneficiary,
+            U256::from_big_endian(&public_values.block_metadata.block_l1_beneficiary.0),
+        ),
+        (
+            GlobalMetadata::BlockBaseBeneficiary,
+            U256::from_big_endian(&public_values.block_metadata.block_base_beneficiary.0),
+        ),
+        (
             GlobalMetadata::BlockTimestamp,
             public_values.block_metadata.block_timestamp,
         ),
@@ -217,6 +225,10 @@ where
         (
             GlobalMetadata::BlockGasUsedAfter,
             public_values.extra_block_data.gas_used_after,
+        ),
+        (
+            GlobalMetadata::BlockGasUsedL1,
+            public_values.extra_block_data.gas_used_l1,
         ),
         (
             GlobalMetadata::StateTrieRootDigestBefore,
@@ -313,6 +325,14 @@ pub(crate) mod debug_utils {
                 U256::from_big_endian(&public_values.block_metadata.block_beneficiary.0),
             ),
             (
+                GlobalMetadata::BlockL1Beneficiary,
+                U256::from_big_endian(&public_values.block_metadata.block_l1_beneficiary.0),
+            ),
+            (
+                GlobalMetadata::BlockBaseBeneficiary,
+                U256::from_big_endian(&public_values.block_metadata.block_base_beneficiary.0),
+            ),
+            (
                 GlobalMetadata::BlockTimestamp,
                 public_values.block_metadata.block_timestamp,
             ),
@@ -375,6 +395,10 @@ pub(crate) mod debug_utils {
             (
                 GlobalMetadata::BlockGasUsedAfter,
                 public_values.extra_block_data.gas_used_after,
+            ),
+            (
+                GlobalMetadata::BlockGasUsedL1,
+                public_values.extra_block_data.gas_used_l1,
             ),
             (
                 GlobalMetadata::StateTrieRootDigestBefore,

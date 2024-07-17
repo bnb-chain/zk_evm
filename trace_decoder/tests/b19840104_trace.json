@@ -11,6 +11,8 @@
         "b_data": {
             "b_meta": {
                 "block_beneficiary": "0x0000000000000000000000000000000000000000",
+                "block_l1_beneficiary": "0x0000000000000000000000000000000000000000",
+                "block_base_beneficiary": "0x0000000000000000000000000000000000000000",
                 "block_timestamp": "0x663e28fb",
                 "block_number": "0x12ebc68",
                 "block_difficulty": "0x0",

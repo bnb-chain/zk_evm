@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::anyhow;
 use ethereum_types::{Address, BigEndianHash, H256, U256};
-use log::log_enabled;
+use log::{error, log_enabled};
 use mpt_trie::partial_trie::{HashedPartialTrie, PartialTrie};
 use plonky2::field::extension::Extendable;
 use plonky2::field::polynomial::PolynomialValues;
@@ -49,6 +49,7 @@ pub struct GenerationInputs {
     /// The exact gas used by the current transaction is `gas_used_after` -
     /// `gas_used_before`.
     pub gas_used_after: U256,
+    pub gas_used_l1: U256,
 
     /// A None would yield an empty proof, otherwise this contains the encoding
     /// of a transaction.
@@ -115,6 +116,14 @@ fn apply_metadata_and_tries_memops<F: RichField + Extendable<D>, const D: usize>
             GlobalMetadata::BlockBeneficiary,
             U256::from_big_endian(&metadata.block_beneficiary.0),
         ),
+        (
+            GlobalMetadata::BlockL1Beneficiary,
+            U256::from_big_endian(&metadata.block_l1_beneficiary.0),
+        ),
+        (
+            GlobalMetadata::BlockBaseBeneficiary,
+            U256::from_big_endian(&metadata.block_base_beneficiary.0),
+        ),
         (GlobalMetadata::BlockTimestamp, metadata.block_timestamp),
         (GlobalMetadata::BlockNumber, metadata.block_number),
         (GlobalMetadata::BlockDifficulty, metadata.block_difficulty),
@@ -144,6 +153,7 @@ fn apply_metadata_and_tries_memops<F: RichField + Extendable<D>, const D: usize>
         ),
         (GlobalMetadata::BlockGasUsedBefore, inputs.gas_used_before),
         (GlobalMetadata::BlockGasUsedAfter, inputs.gas_used_after),
+        (GlobalMetadata::BlockGasUsedL1, inputs.gas_used_l1),
         (GlobalMetadata::TxnNumberBefore, inputs.txn_number_before),
         (
             GlobalMetadata::TxnNumberAfter,
@@ -275,6 +285,7 @@ pub fn generate_traces<F: RichField + Extendable<D>, const D: usize>(
         txn_number_after,
         gas_used_before: inputs.gas_used_before,
         gas_used_after,
+        gas_used_l1: inputs.gas_used_l1,
     };
 
     let public_values = PublicValues {
@@ -339,6 +350,7 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
     if label.contains("check_state_trie")
         || label.contains("check_txn_trie")
         || label.contains("check_receipt_trie")
+        || !label.is_empty()
     {
         let state_trie_ptr = u256_to_usize(
             state
@@ -346,10 +358,10 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::StateTrieRoot),
         )
         .map_err(|_| anyhow!("State trie pointer is too large to fit in a usize."))?;
-        log::debug!(
-            "Computed state trie: {:?}",
-            get_state_trie::<HashedPartialTrie>(&state.memory, state_trie_ptr)
-        );
+        // log::debug!(
+        //     "Computed state trie: {:?}",
+        //     get_state_trie::<HashedPartialTrie>(&state.memory, state_trie_ptr)
+        // );
 
         let txn_trie_ptr = u256_to_usize(
             state
@@ -357,10 +369,10 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::TransactionTrieRoot),
         )
         .map_err(|_| anyhow!("Transactions trie pointer is too large to fit in a usize."))?;
-        log::debug!(
-            "Computed transactions trie: {:?}",
-            get_txn_trie::<HashedPartialTrie>(&state.memory, txn_trie_ptr)
-        );
+        // log::debug!(
+        //     "Computed transactions trie: {:?}",
+        //     get_txn_trie::<HashedPartialTrie>(&state.memory, txn_trie_ptr)
+        // );
 
         let receipt_trie_ptr = u256_to_usize(
             state
@@ -368,7 +380,11 @@ pub(crate) fn output_debug_tries<F: RichField>(state: &GenerationState<F>) -> an
                 .read_global_metadata(GlobalMetadata::ReceiptTrieRoot),
         )
         .map_err(|_| anyhow!("Receipts trie pointer is too large to fit in a usize."))?;
-        log::debug!(
+        // log::debug!(
+        //     "Computed receipts trie: {:?}",
+        //     get_receipt_trie::<HashedPartialTrie>(&state.memory, receipt_trie_ptr)
+        // );
+        println!(
             "Computed receipts trie: {:?}",
             get_receipt_trie::<HashedPartialTrie>(&state.memory, receipt_trie_ptr)
         );

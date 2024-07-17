@@ -48,17 +48,8 @@ pub struct LogRlp {
     pub data: Bytes,
 }
 
-#[derive(RlpEncodable, RlpDecodable, Debug, Clone)]
-pub struct LegacyReceiptRlp {
-    pub status: bool,
-    pub cum_gas_used: U256,
-    pub bloom: Bytes,
-    pub logs: Vec<LogRlp>,
-}
-
-impl LegacyReceiptRlp {
-    // RLP encode the receipt and prepend the tx type.
-    pub fn encode(&self, tx_type: u8) -> Vec<u8> {
+trait ReceiptRlp where Self: Encodable + Decodable {
+    fn encode(&self, tx_type: u8) -> Vec<u8> {
         let mut bytes = rlp::encode(self).to_vec();
         if tx_type != 0 {
             bytes.insert(0, tx_type);
@@ -67,11 +58,36 @@ impl LegacyReceiptRlp {
     }
 }
 
+#[derive(RlpEncodable, RlpDecodable, Debug, Clone)]
+pub struct LegacyReceiptRlp {
+    pub status: bool,
+    pub cum_gas_used: U256,
+    pub bloom: Bytes,
+    pub logs: Vec<LogRlp>,
+}
+
+impl ReceiptRlp for LegacyReceiptRlp{
+}
+
+#[derive(RlpEncodable, RlpDecodable, Debug, Clone)]
+pub struct DepositReceiptRlp {
+    pub status: bool,
+    pub cum_gas_used: U256,
+    pub bloom: Bytes,
+    pub logs: Vec<LogRlp>,
+    pub deposit_nonce: U256,
+    pub deposit_receipt_version: U256,
+}
+
+impl ReceiptRlp for DepositReceiptRlp {
+}
+
 pub(crate) fn parse_receipts(rlp: &[u8]) -> Result<Vec<U256>, ProgramError> {
     let txn_type = match rlp.first().ok_or(ProgramError::InvalidRlp)? {
         1 => 1,
         2 => 2,
         3 => 3,
+        126 => 126,
         _ => 0,
     };
 
@@ -79,8 +95,25 @@ pub(crate) fn parse_receipts(rlp: &[u8]) -> Result<Vec<U256>, ProgramError> {
     let rlp = if txn_type == 0 { rlp } else { &rlp[1..] };
 
     let payload_info = PayloadInfo::from(rlp).map_err(|_| ProgramError::InvalidRlp)?;
-    let decoded_receipt: LegacyReceiptRlp =
-        rlp::decode(rlp).map_err(|_| ProgramError::InvalidRlp)?;
+    let mut decoded_receipt = DepositReceiptRlp {
+        status: false,
+        cum_gas_used: Default::default(),
+        bloom: Default::default(),
+        logs: vec![],
+        deposit_nonce: Default::default(),
+        deposit_receipt_version: Default::default(),
+    };
+    if txn_type == 126 {
+        decoded_receipt =
+            rlp::decode(rlp).map_err(|_| ProgramError::InvalidRlp)?;
+    } else {
+        let decoded: LegacyReceiptRlp =
+            rlp::decode(rlp).map_err(|_| ProgramError::InvalidRlp)?;
+        decoded_receipt.status = decoded.status;
+        decoded_receipt.cum_gas_used = decoded.cum_gas_used;
+        decoded_receipt.bloom = decoded.bloom;
+        decoded_receipt.logs = decoded.logs;
+    }
 
     let mut parsed_receipt = if txn_type == 0 {
         Vec::new()
@@ -108,6 +141,10 @@ pub(crate) fn parse_receipts(rlp: &[u8]) -> Result<Vec<U256>, ProgramError> {
         parsed_receipt.extend(log.topics.iter().map(|topic| U256::from(topic.as_bytes())));
         parsed_receipt.push(log.data.len().into());
         parsed_receipt.extend(log.data.iter().map(|byte| U256::from(*byte)));
+    }
+    if txn_type == 126 {
+        parsed_receipt.push(decoded_receipt.deposit_nonce);
+        parsed_receipt.push(decoded_receipt.deposit_receipt_version);
     }
 
     Ok(parsed_receipt)

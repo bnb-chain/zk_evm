@@ -1,0 +1,429 @@
+#![allow(missing_docs)]
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+
+use ethers::prelude::*;
+use ethers::utils::rlp;
+use evm_arithmetization::generation::mpt::AccountRlp;
+use itertools::Itertools;
+use k256::pkcs8::der::asn1::Null;
+use std::backtrace::Backtrace;
+use mpt_trie::nibbles::Nibbles;
+use mpt_trie::partial_trie::PartialTrie;
+use mpt_trie::partial_trie::{HashedPartialTrie, Node};
+use mpt_trie::trie_subsets::create_trie_subset;
+use ethers::abi::AbiEncode;
+use std::cmp::Ordering;
+
+use crate::utils::{keccak, EMPTY_HASH, BEACON_ADDR};
+
+#[derive(Clone, Debug)]
+pub struct MptNode(pub Vec<u8>);
+
+#[derive(Default, Debug)]
+pub struct Mpt {
+    pub mpt: HashMap<H256, MptNode>,
+    pub root: H256,
+}
+
+const EMPTY_TRIE_HASH: H256 = H256([
+    86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153,
+    108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+]);
+
+impl Mpt {
+    pub fn new() -> Self {
+        Self {
+            mpt: HashMap::new(),
+            root: H256::zero(),
+        }
+    }
+
+    pub fn to_partial_trie(&self) -> HashedPartialTrie {
+        let trie = self.to_partial_trie_helper(self.root);
+        if trie == Node::Hash(EMPTY_TRIE_HASH).into() {
+            Node::Empty.into()
+        } else {
+            trie
+        }
+    }
+
+    fn pad_to_u8_32(bytes: &[u8]) -> [u8; 32] {
+        let mut padded_bytes = [0u8; 32];
+        padded_bytes[32 - bytes.len()..].copy_from_slice(bytes);
+        padded_bytes
+    }
+
+    fn to_partial_trie_helper(&self, root: H256) -> HashedPartialTrie {
+        let node = self.mpt.get(&root);
+        let data = if let Some(mpt_node) = node {
+            mpt_node.0.clone()
+        } else {
+            return Node::Hash(root).into();
+        };
+        let rlp_obj = rlp::Rlp::new(&data as &[u8]);
+        let decoded = rlp_obj.as_list::<Vec<u8>>();
+        match decoded {
+            Ok(a) => {
+                match a.len() {
+                    17 => {
+                        let value = a[16].clone();
+                        let mut children = vec![];
+                        for ch in a.iter().take(16) {
+                            if ch.is_empty() {
+                                children.push(Node::Empty.into());
+                                continue;
+                            }
+                            children.push(Arc::new(Box::new(
+                                self.to_partial_trie_helper(H256::from_slice(ch)),
+                            )));
+                        }
+                        Node::Branch {
+                            value,
+                            children: children.try_into().unwrap(),
+                        }
+                        .into()
+                    }
+                    2 => match a[0][0] >> 4 {
+                        0 => {
+                            let ext_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            Node::Extension {
+                                nibbles: ext_prefix,
+                                child: Arc::new(Box::new(
+                                    self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                                )),
+                            }
+                            .into()
+                        }
+                        1 => {
+                            let b = a[0][0] & 0xf;
+                            let mut ext_prefix = if a[0].len() > 1 {
+                                Nibbles::from_bytes_be(&a[0][1..]).unwrap()
+                            } else {
+                                Nibbles::from_h256_be_zero(H256::zero())
+                                // Nibbles {
+                                //     count: 0,
+                                //     //packed: U512::zero(),
+                                //     packed: U256::zero(),
+                                // }
+                            };
+                            ext_prefix.push_nibble_front(b);
+                            Node::Extension {
+                                nibbles: ext_prefix,
+                                child: Arc::new(Box::new(
+                                    self.to_partial_trie_helper(H256::from_slice(&a[1])),
+                                )),
+                            }
+                            .into()
+                        }
+                        2 => {
+                            let leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            Node::Leaf {
+                                nibbles: leaf_prefix,
+                                value: a[1].clone(),
+                            }
+                            .into()
+                        }
+                        3 => {
+                            let b = a[0][0] & 0xf;
+                            let mut leaf_prefix = Nibbles::from_bytes_be(&a[0][1..]).unwrap();
+                            leaf_prefix.push_nibble_front(b);
+                            Node::Leaf {
+                                nibbles: leaf_prefix,
+                                value: a[1].clone(),
+                            }
+                            .into()
+                        }
+                        _ => panic!("wtf?"),
+                    },
+                    _ => panic!("wtf?"),
+                }
+            }
+            Err(_e) => {
+                let value = rlp_obj.at(16).unwrap().clone();
+                let mut children = vec![];
+                for ch_i in 0..16 {
+                    let ch = rlp_obj.at(ch_i).unwrap();
+                    if ch.is_empty() {
+                        children.push(Node::Empty.into());
+                        continue;
+                    }
+                    if ch.as_raw().len() == 33 {
+                        children.push(Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256::from_slice(&ch.as_raw()[1..33])),
+                        )));
+                        continue;
+                    }
+                    if ch.item_count().unwrap_or_default() == 2 {
+                        children.push(Arc::new(Box::new(
+                            self.to_partial_trie_helper(H256(keccak(&ch.as_raw()))),
+                        )));
+                        continue;
+                    }
+                    children.push(Arc::new(Box::new(
+                        self.to_partial_trie_helper(H256::from_slice(&Self::pad_to_u8_32(&ch.as_raw()))),
+                    )))
+                }
+
+                let value_u8 = value.as_list::<u8>();
+                Node::Branch {
+                    value: value_u8.unwrap_or_default(),
+                    children: children.try_into().unwrap(),
+                }
+                .into()
+            }
+        
+        }
+    }
+}
+
+pub fn insert_mpt(mpt: &mut Mpt, proof: Vec<Bytes>) {
+    for p in proof.into_iter() {
+        // mpt.mpt.insert(H256(keccak256(&p)), MptNode(p.to_vec()));
+        insert_mpt_helper(mpt, p);
+    }
+}
+
+fn insert_mpt_helper(mpt: &mut Mpt, rlp_node: Bytes) {
+    mpt.mpt
+        .insert(H256(keccak(&rlp_node)), MptNode(rlp_node.to_vec()));
+    // println!("decode rlp node {}", bytes_to_hex(&rlp_node.clone() as &[u8]));
+    let binding = rlp_node.clone();
+    let rlp_obj = rlp::Rlp::new(&binding as &[u8]);
+    let decoded = rlp_obj.as_list::<Vec<u8>>();
+    // [k,v] -> [branch_k, branch_k, [k,v], [k,v]]
+    match decoded {
+        Ok(a) => {
+            if a.len() == 2 {
+                let prefix = a[0].clone();
+                let is_leaf = (prefix[0] >> 4 == 2) || (prefix[0] >> 4 == 3);
+                let mut nibbles = nibbles_from_hex_prefix_encoding(&prefix);
+                // 3fca9f66fe6a4149a01f56c05a83a99a05918fa7495003be104715c4
+                loop {
+                    let node = rlp::encode_list::<Vec<u8>, _>(&[
+                        nibbles.to_hex_prefix_encoding(is_leaf).to_vec(),
+                        a[1].clone(),
+                    ]);
+                    mpt.mpt.insert(H256(keccak(&node)), MptNode(node.to_vec()));
+                    if nibbles.is_empty() {
+                        break;
+                    }
+                    nibbles.pop_next_nibble_front();
+                }
+            }
+        }
+        Err(_e) => {
+            for i in 0..rlp_obj.item_count().unwrap() {
+                let item = rlp_obj.at(i).unwrap();
+                if item.is_empty() {
+                    continue;
+                }
+                if item.item_count().unwrap_or_default() == 2 {
+                    insert_mpt_helper(mpt, Bytes::from(item.as_raw().to_vec()));
+                }
+            }
+        }
+    }
+}
+
+fn nibbles_from_hex_prefix_encoding(b: &[u8]) -> Nibbles {
+    let mut b = b.to_vec();
+    match b[0] >> 4 {
+        0 | 2 => Nibbles::from_bytes_be(&b[1..]).unwrap(),
+        1 | 3 => {
+            b[0] &= 0xf;
+            let mut bs = [0; 64];
+            bs[64 - b.len()..].copy_from_slice(&b);
+            // Nibbles {
+            //     count: 2 * b.len() - 1,
+            //     // packed: U512::from_bytes_be(&bs).unwrap(),
+            //     packed: U512::from_big_endian(&b),
+            // }
+            Nibbles::from_bytes_be(&b).unwrap()
+        }
+        _ => panic!("wtf?"),
+    }
+}
+
+pub fn get_account_storage_post(address: H160, diff: &DiffMode) -> Option<AccountState> {
+    diff.post.get(&address).cloned()
+}
+
+pub fn apply_diffs(
+    mut mpt: HashedPartialTrie,
+    mut storage: HashMap<H256, HashedPartialTrie>,
+    contract_code: &mut HashMap<H256, Vec<u8>>,
+    diff: DiffMode,
+) -> (HashedPartialTrie, HashMap<H256, HashedPartialTrie>) {
+    let empty_node = HashedPartialTrie::from(Node::Empty);
+
+    let tokk = |k: H256| Nibbles::from_bytes_be(&keccak(k.0)).unwrap();
+
+    for (addr, old) in &diff.pre {
+        let key = H256(keccak(addr.0));
+        if !diff.post.contains_key(addr) {
+            storage.remove(&key);
+        } else {
+            let new = diff.post.get(addr).unwrap();
+            if old.storage.clone().unwrap_or_default().is_empty()
+                && new.storage.clone().unwrap_or_default().is_empty()
+            {
+                continue;
+            }
+            let mut trie = storage.get(&key).unwrap().clone();
+            for (&k, &v) in &old.storage.clone().unwrap_or_default() {
+                if !new.storage.clone().unwrap_or_default().contains_key(&k) {
+                    // dbg!(format!("Del {:?} {:?}", addr, k));
+                    trie.delete(tokk(k)).unwrap();
+                    // println!("Done Del {:?} {:?}", addr, k);
+                } else {
+                    let sanity = trie.get(tokk(k)).unwrap();
+                    let sanity = rlp::decode::<U256>(sanity).unwrap();
+                    assert_eq!(sanity, v.into_uint());
+                    let w = *new.storage.clone().unwrap_or_default().get(&k).unwrap();
+                    trie.insert(tokk(k), rlp::encode(&w.into_uint()).to_vec())
+                        .unwrap();
+                }
+            }
+            for (&k, v) in &new.storage.clone().unwrap_or_default() {
+                if !old.storage.clone().unwrap_or_default().contains_key(&k) {
+                    trie.insert(tokk(k), rlp::encode(&v.into_uint()).to_vec())
+                        .unwrap();
+                }
+            }
+            storage.insert(key, trie);
+        }
+    }
+
+    for (addr, new) in &diff.post {
+        let key = H256(keccak(addr.0));
+        if !diff.pre.contains_key(addr) {
+            let mut trie = HashedPartialTrie::from(Node::Empty);
+            for (&k, v) in &new.storage.clone().unwrap_or_default() {
+                trie.insert(tokk(k), rlp::encode(&v.into_uint()).to_vec())
+                    .unwrap();
+            }
+            storage.insert(key, trie);
+        }
+    }
+
+    let tok = |addr: &Address| Nibbles::from_bytes_be(&keccak(addr.0)).unwrap();
+
+    // Delete accounts that are not in the post state.
+    for addr in diff.pre.keys() {
+        if !diff.post.contains_key(addr) {
+            mpt.delete(tok(addr)).unwrap();
+        }
+    }
+
+    for (addr, acc) in &diff.post {
+        if !diff.pre.contains_key(addr) {
+            // New account
+            let code_hash = acc
+                .code
+                .clone()
+                .map(|s| {
+                    if s.is_empty() {
+                        EMPTY_HASH
+                    } else {
+                        let code = s.split_at(2).1;
+                        let bytes = hex::decode(code).unwrap();
+                        let h = H256(keccak(&bytes));
+                        contract_code.insert(h, bytes);
+                        h
+                    }
+                })
+                .unwrap_or(EMPTY_HASH);
+            let account = AccountRlp {
+                nonce: acc.nonce.unwrap_or(U256::zero()),
+                balance: acc.balance.unwrap_or(U256::zero()),
+                storage_root: storage
+                    .get(&H256(keccak(addr.0)))
+                    .unwrap_or(&empty_node.clone())
+                    .hash(),
+                code_hash,
+            };
+            mpt.insert(tok(addr), rlp::encode(&account).to_vec())
+                .unwrap();
+        } else {
+            let old = mpt
+                .get(tok(addr))
+                .map(|d| rlp::decode(d).unwrap())
+                .unwrap_or(AccountRlp {
+                    nonce: U256::zero(),
+                    balance: U256::zero(),
+                    storage_root: empty_node.hash(),
+                    code_hash: EMPTY_HASH,
+                });
+            let code_hash = acc
+                .code
+                .clone()
+                .map(|s| {
+                    if s.is_empty() {
+                        EMPTY_HASH
+                    } else {
+                        let code = s.split_at(2).1;
+                        let bytes = hex::decode(code).unwrap();
+                        let h = H256(keccak(&bytes));
+                        contract_code.insert(h, bytes);
+                        h
+                    }
+                })
+                .unwrap_or(old.code_hash);
+            let account = AccountRlp {
+                nonce: acc.nonce.unwrap_or(old.nonce),
+                balance: acc.balance.unwrap_or(old.balance),
+                storage_root: storage
+                    .get(&H256(keccak(addr.0)))
+                    .map(|trie| trie.hash())
+                    .unwrap_or(old.storage_root),
+                code_hash,
+            };
+            mpt.insert(tok(addr), rlp::encode(&account).to_vec())
+                .unwrap();
+        }
+    }
+
+    (mpt, storage)
+}
+
+pub fn trim(
+    trie: HashedPartialTrie,
+    mut storage_mpts: HashMap<H256, HashedPartialTrie>,
+    touched: BTreeMap<Address, AccountState>,
+    has_storage_deletion: bool,
+) -> (HashedPartialTrie, HashMap<H256, HashedPartialTrie>) {
+    let tok = |addr: &Address| Nibbles::from_bytes_be(&keccak(addr.0)).unwrap();
+    let mut keys = touched.keys().map(tok).collect::<Vec<_>>();
+    let beacon_acc_key = Nibbles::from_bytes_be(&keccak(BEACON_ADDR.0)).unwrap();
+    keys.push(beacon_acc_key);
+    let new_state_trie = create_trie_subset(&trie, keys).unwrap();
+    if has_storage_deletion {
+        // TODO: This is inefficient. Replace with a smarter solution.
+        return (new_state_trie, storage_mpts);
+    }
+    let keys_to_addrs = touched
+        .keys()
+        .map(|addr| (H256(keccak(addr.0)), *addr))
+        .collect::<HashMap<_, _>>();
+    for (k, t) in storage_mpts.iter_mut() {
+        if !keys_to_addrs.contains_key(k) {
+            *t = HashedPartialTrie::from(Node::Hash(t.hash()));
+        } else {
+            let addr = keys_to_addrs.get(k).unwrap();
+            let acc = touched.get(addr).unwrap();
+            let keys = acc
+                .storage
+                .clone()
+                .unwrap_or_default()
+                .keys()
+                .map(|slot| Nibbles::from_bytes_be(&keccak(slot.0)).unwrap())
+                .collect::<Vec<_>>();
+
+            if let Ok(trie) = create_trie_subset(t, keys) {
+                *t = trie;
+            }
+        }
+    }
+    (new_state_trie, storage_mpts)
+}

@@ -42,6 +42,8 @@ pub(crate) enum GlobalMetadata {
 
     // Block metadata.
     BlockBeneficiary,
+    BlockL1Beneficiary,
+    BlockBaseBeneficiary,
     BlockTimestamp,
     BlockNumber,
     BlockDifficulty,
@@ -56,6 +58,8 @@ pub(crate) enum GlobalMetadata {
     BlockGasUsedBefore,
     /// After current transactions block values.
     BlockGasUsedAfter,
+    /// L1 current transactions block used
+    BlockGasUsedL1,
     /// Current block header hash
     BlockCurrentHash,
     /// EIP-4788: hash tree root of the beacon chain parent block.
@@ -114,7 +118,7 @@ pub(crate) enum GlobalMetadata {
 }
 
 impl GlobalMetadata {
-    pub(crate) const COUNT: usize = 55;
+    pub(crate) const COUNT: usize = 58;
 
     /// Unscales this virtual offset by their respective `Segment` value.
     pub(crate) const fn unscale(&self) -> usize {
@@ -137,6 +141,8 @@ impl GlobalMetadata {
             Self::TransactionTrieRootDigestAfter,
             Self::ReceiptTrieRootDigestAfter,
             Self::BlockBeneficiary,
+            Self::BlockL1Beneficiary,
+            Self::BlockBaseBeneficiary,
             Self::BlockTimestamp,
             Self::BlockNumber,
             Self::BlockDifficulty,
@@ -150,6 +156,7 @@ impl GlobalMetadata {
             Self::BlockGasUsedBefore,
             Self::BlockGasUsedAfter,
             Self::ParentBeaconBlockRoot,
+            Self::BlockGasUsedL1,
             Self::RefundCounter,
             Self::AccessedAddressesLen,
             Self::AccessedStorageKeysLen,
@@ -198,6 +205,8 @@ impl GlobalMetadata {
             Self::TransactionTrieRootDigestAfter => "GLOBAL_METADATA_TXN_TRIE_DIGEST_AFTER",
             Self::ReceiptTrieRootDigestAfter => "GLOBAL_METADATA_RECEIPT_TRIE_DIGEST_AFTER",
             Self::BlockBeneficiary => "GLOBAL_METADATA_BLOCK_BENEFICIARY",
+            Self::BlockL1Beneficiary => "GLOBAL_METADATA_BLOCK_L1_BENEFICIARY",
+            Self::BlockBaseBeneficiary => "GLOBAL_METADATA_BLOCK_BASE_BENEFICIARY",
             Self::BlockTimestamp => "GLOBAL_METADATA_BLOCK_TIMESTAMP",
             Self::BlockNumber => "GLOBAL_METADATA_BLOCK_NUMBER",
             Self::BlockDifficulty => "GLOBAL_METADATA_BLOCK_DIFFICULTY",
@@ -210,6 +219,7 @@ impl GlobalMetadata {
             Self::BlockGasUsed => "GLOBAL_METADATA_BLOCK_GAS_USED",
             Self::BlockGasUsedBefore => "GLOBAL_METADATA_BLOCK_GAS_USED_BEFORE",
             Self::BlockGasUsedAfter => "GLOBAL_METADATA_BLOCK_GAS_USED_AFTER",
+            Self::BlockGasUsedL1 => "GLOBAL_METADATA_BLOCK_GAS_USED_L1",
             Self::BlockCurrentHash => "GLOBAL_METADATA_BLOCK_CURRENT_HASH",
             Self::ParentBeaconBlockRoot => "GLOBAL_METADATA_PARENT_BEACON_BLOCK_ROOT",
             Self::RefundCounter => "GLOBAL_METADATA_REFUND_COUNTER",

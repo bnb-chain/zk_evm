@@ -40,6 +40,13 @@ read_txn_from_memory:
     %jumpi(process_type_3_txn)
     // stack: rlp_segment, retdest
 
+    DUP1
+    MLOAD_GENERAL
+    %eq_const(126)
+    // stack: first_byte == 126, rlp_segment, retdest
+    %jumpi(process_type_126_txn)
+    // stack: rlp_segment, retdest
+
     // At this point, since it's not a type 1, 2 or 3 transaction,
     // it must be a legacy (aka type 0) transaction.
     %jump(process_type_0_txn)

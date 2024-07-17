@@ -326,3 +326,47 @@ ret_zero:
     // stack: account_ptr, 64, storage_key, after_storage_read, retdest
     %pop4
     PUSH 0 SWAP1 JUMP
+
+// Decode the "from" field and store it.
+// This field is 160-bit.
+%macro decode_and_store_from
+    // stack: rlp_addr
+    %decode_rlp_string_len
+    // stack: rlp_addr, len
+    SWAP1
+    // stack: len, rlp_addr
+    DUP1 %eq_const(20) ISZERO %jumpi(invalid_txn) // Address is 160-bit
+    %stack (len, rlp_addr) -> (rlp_addr, len, %%with_scalar)
+    %jump(decode_int_given_len)
+%%with_scalar:
+    // stack: rlp_addr, int
+    SWAP1
+    %mstore_txn_field(@TXN_FIELD_ORIGIN)
+    // stack: rlp_addr
+%endmacro
+
+// Decode the source_hash and store it.
+%macro decode_and_store_source_hash
+    // stack: rlp_addr
+    %decode_rlp_scalar
+    %stack (rlp_addr, source_hash) -> (source_hash, rlp_addr)
+    %mstore_txn_field(@TXN_FIELD_SOURCE_HASH)
+    // stack: rlp_addr
+%endmacro
+
+// Decode the mint and store it.
+%macro decode_and_store_mint
+    // stack: rlp_addr
+    %decode_rlp_scalar
+    %stack (rlp_addr, mint) -> (mint, rlp_addr)
+    %mstore_txn_field(@TXN_FIELD_MINT)
+    // stack: rlp_addr
+%endmacro
+
+%macro decode_and_store_is_system_tx
+    // stack: rlp_addr
+    %decode_rlp_scalar
+    %stack (rlp_addr, is_system_tx) -> (is_system_tx, rlp_addr)
+    %mstore_txn_field(@TXN_FIELD_IS_SYSTEM_TX)
+    // stack: rlp_addr
+%endmacro

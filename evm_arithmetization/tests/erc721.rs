@@ -56,17 +56,30 @@ fn test_erc721() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let owner = hex!("5B38Da6a701c568545dCfcB03FcB875f56beddC4");
     let contract = hex!("f2B1114C644cBb3fF63Bf1dD284c8Cd716e95BE9");
 
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let owner_state_key = keccak(owner);
     let contract_state_key = keccak(contract);
 
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let owner_nibbles = Nibbles::from_bytes_be(owner_state_key.as_bytes()).unwrap();
     let contract_nibbles = Nibbles::from_bytes_be(contract_state_key.as_bytes()).unwrap();
 
     let (mut state_trie_before, mut storage_tries) = preinitialized_state_and_storage_tries()?;
     let mut beacon_roots_account_storage = storage_tries[0].1.clone();
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
+    state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    )?;
     state_trie_before.insert(owner_nibbles, rlp::encode(&owner_account()).to_vec())?;
     state_trie_before.insert(contract_nibbles, rlp::encode(&contract_account()?).to_vec())?;
 
@@ -112,6 +125,8 @@ fn test_erc721() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        // block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -141,6 +156,15 @@ fn test_erc721() -> anyhow::Result<()> {
             balance: owner_account.balance - gas_used * 0xa,
             ..owner_account
         };
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x8e9f4u64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
+        )?;
         state_trie_after.insert(owner_nibbles, rlp::encode(&owner_account_after).to_vec())?;
         let contract_account_after = AccountRlp {
             storage_root: contract_storage_after()?.hash(),
@@ -198,6 +222,7 @@ fn test_erc721() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

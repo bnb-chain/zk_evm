@@ -34,15 +34,24 @@ fn test_selfdestruct() -> anyhow::Result<()> {
     let config = StarkConfig::standard_fast_config();
 
     let beneficiary = hex!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+    let base_beneficiary = hex!("4200000000000000000000000000000000000019");
     let sender = hex!("5eb96AA102a29fAB267E12A40a5bc6E9aC088759");
     let to = hex!("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0");
 
+    let base_beneficiary_state_key = keccak(base_beneficiary);
     let sender_state_key = keccak(sender);
     let to_state_key = keccak(to);
 
+    let base_beneficiary_nibbles =
+        Nibbles::from_bytes_be(base_beneficiary_state_key.as_bytes()).unwrap();
     let sender_nibbles = Nibbles::from_bytes_be(sender_state_key.as_bytes()).unwrap();
     let to_nibbles = Nibbles::from_bytes_be(to_state_key.as_bytes()).unwrap();
 
+    let base_beneficiary_account_before = AccountRlp {
+        balance: 0u64.into(),
+        nonce: 1.into(),
+        ..AccountRlp::default()
+    };
     let sender_account_before = AccountRlp {
         nonce: 5.into(),
         balance: eth_to_wei(100_000.into()),
@@ -62,6 +71,10 @@ fn test_selfdestruct() -> anyhow::Result<()> {
 
     let (mut state_trie_before, storage_tries) = preinitialized_state_and_storage_tries()?;
     let mut beacon_roots_account_storage = storage_tries[0].1.clone();
+    state_trie_before.insert(
+        base_beneficiary_nibbles,
+        rlp::encode(&base_beneficiary_account_before).to_vec(),
+    )?;
     state_trie_before.insert(sender_nibbles, rlp::encode(&sender_account_before).to_vec())?;
     state_trie_before.insert(to_nibbles, rlp::encode(&to_account_before).to_vec())?;
 
@@ -77,6 +90,8 @@ fn test_selfdestruct() -> anyhow::Result<()> {
 
     let block_metadata = BlockMetadata {
         block_beneficiary: Address::from(beneficiary),
+        // block_l1_beneficiary: Default::default(),
+        block_base_beneficiary: Address::from(base_beneficiary),
         block_timestamp: 0x03e8.into(),
         block_number: 1.into(),
         block_difficulty: 0x020000.into(),
@@ -101,6 +116,15 @@ fn test_selfdestruct() -> anyhow::Result<()> {
         let beacon_roots_account =
             beacon_roots_contract_from_storage(&beacon_roots_account_storage);
 
+        let base_beneficiary_account_after = AccountRlp {
+            balance: 0x3f7b4u64.into(),
+            nonce: 1.into(),
+            ..AccountRlp::default()
+        };
+        let _ = state_trie_after.insert(
+            base_beneficiary_nibbles,
+            rlp::encode(&base_beneficiary_account_after).to_vec(),
+        );
         let sender_account_after = AccountRlp {
             nonce: 6.into(),
             balance: eth_to_wei(110_000.into()) - 26_002 * 0xa,
@@ -168,6 +192,7 @@ fn test_selfdestruct() -> anyhow::Result<()> {
             prev_hashes: vec![H256::default(); 256],
             cur_hash: H256::default(),
         },
+        gas_used_l1: 0.into(),
     };
 
     let mut timing = TimingTree::new("prove", log::Level::Debug);

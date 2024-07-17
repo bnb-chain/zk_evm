@@ -1,0 +1,3 @@
+[submodule "plonky2"]
+	path = plonky2
+	url = https://github.com/0xPolygonZero/plonky2.git

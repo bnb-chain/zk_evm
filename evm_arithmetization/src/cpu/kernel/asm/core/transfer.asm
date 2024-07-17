@@ -87,6 +87,7 @@ global add_eth_new_account:
     // stack: null_account_ptr, addr, amount, retdest
     POP
     // stack: addr, amount, retdest
+    DUP2 ISZERO %jumpi(add_eth_new_account_zero)
     DUP1 PUSH 0
     // stack: is_eoa, addr, addr, amount, retdest
     %journal_add_account_created

@@ -163,6 +163,10 @@ impl BlockHashes {
 pub struct BlockMetadata {
     /// The address of this block's producer.
     pub block_beneficiary: Address,
+    /// The address of this block's producer receipt l1 fee.
+    pub block_l1_beneficiary: Address,
+    /// The address of this block's producer receipt base fee.
+    pub block_base_beneficiary: Address,
     /// The timestamp of this block.
     pub block_timestamp: U256,
     /// The index of this block.
@@ -194,25 +198,29 @@ impl BlockMetadata {
         assert!(pis.len() == BlockMetadataTarget::SIZE);
 
         let block_beneficiary = get_h160(&pis[0..5]);
-        let block_timestamp = pis[5].to_canonical_u64().into();
-        let block_number = pis[6].to_canonical_u64().into();
-        let block_difficulty = pis[7].to_canonical_u64().into();
-        let block_random = get_h256(&pis[8..16]);
-        let block_gaslimit = pis[16].to_canonical_u64().into();
-        let block_chain_id = pis[17].to_canonical_u64().into();
+        let block_l1_beneficiary = get_h160(&pis[5..10]);
+        let block_base_beneficiary = get_h160(&pis[10..15]);
+        let block_timestamp = pis[15].to_canonical_u64().into();
+        let block_number = pis[16].to_canonical_u64().into();
+        let block_difficulty = pis[17].to_canonical_u64().into();
+        let block_random = get_h256(&pis[18..26]);
+        let block_gaslimit = pis[26].to_canonical_u64().into();
+        let block_chain_id = pis[27].to_canonical_u64().into();
         let block_base_fee =
-            (pis[18].to_canonical_u64() + (pis[19].to_canonical_u64() << 32)).into();
-        let block_gas_used = pis[20].to_canonical_u64().into();
+            (pis[28].to_canonical_u64() + (pis[29].to_canonical_u64() << 32)).into();
+        let block_gas_used = pis[30].to_canonical_u64().into();
         let block_blob_gas_used =
-            (pis[21].to_canonical_u64() + (pis[22].to_canonical_u64() << 32)).into();
+            (pis[31].to_canonical_u64() + (pis[32].to_canonical_u64() << 32)).into();
         let block_excess_blob_gas =
-            (pis[23].to_canonical_u64() + (pis[24].to_canonical_u64() << 32)).into();
-        let parent_beacon_block_root = get_h256(&pis[25..33]);
+            (pis[33].to_canonical_u64() + (pis[34].to_canonical_u64() << 32)).into();
+        let parent_beacon_block_root = get_h256(&pis[35..43]);
         let block_bloom =
-            core::array::from_fn(|i| h2u(get_h256(&pis[33 + 8 * i..33 + 8 * (i + 1)])));
+            core::array::from_fn(|i| h2u(get_h256(&pis[43 + 8 * i..43 + 8 * (i + 1)])));
 
         Self {
             block_beneficiary,
+            block_l1_beneficiary,
+            block_base_beneficiary,
             block_timestamp,
             block_number,
             block_difficulty,
@@ -247,6 +255,7 @@ pub struct ExtraBlockData {
     /// It should match the `block_gas_used` value after execution of the
     /// last transaction in a block.
     pub gas_used_after: U256,
+    pub gas_used_l1: U256,
 }
 
 impl ExtraBlockData {
@@ -258,6 +267,7 @@ impl ExtraBlockData {
         let txn_number_after = pis[9].to_canonical_u64().into();
         let gas_used_before = pis[10].to_canonical_u64().into();
         let gas_used_after = pis[11].to_canonical_u64().into();
+        let gas_used_l1 = pis[12].to_canonical_u64().into();
 
         Self {
             checkpoint_state_trie_root,
@@ -265,6 +275,7 @@ impl ExtraBlockData {
             txn_number_after,
             gas_used_before,
             gas_used_after,
+            gas_used_l1,
         }
     }
 }
@@ -315,6 +326,8 @@ impl PublicValuesTarget {
 
         let BlockMetadataTarget {
             block_beneficiary,
+            block_l1_beneficiary,
+            block_base_beneficiary,
             block_timestamp,
             block_number,
             block_difficulty,
@@ -330,6 +343,8 @@ impl PublicValuesTarget {
         } = self.block_metadata;
 
         buffer.write_target_array(&block_beneficiary)?;
+        buffer.write_target_array(&block_l1_beneficiary)?;
+        buffer.write_target_array(&block_base_beneficiary)?;
         buffer.write_target(block_timestamp)?;
         buffer.write_target(block_number)?;
         buffer.write_target(block_difficulty)?;
@@ -356,12 +371,14 @@ impl PublicValuesTarget {
             txn_number_after,
             gas_used_before,
             gas_used_after,
+            gas_used_l1,
         } = self.extra_block_data;
         buffer.write_target_array(&checkpoint_state_trie_root)?;
         buffer.write_target(txn_number_before)?;
         buffer.write_target(txn_number_after)?;
         buffer.write_target(gas_used_before)?;
         buffer.write_target(gas_used_after)?;
+        buffer.write_target_array(&gas_used_l1)?;
 
         Ok(())
     }
@@ -382,6 +399,8 @@ impl PublicValuesTarget {
 
         let block_metadata = BlockMetadataTarget {
             block_beneficiary: buffer.read_target_array()?,
+            block_l1_beneficiary: buffer.read_target_array()?,
+            block_base_beneficiary: buffer.read_target_array()?,
             block_timestamp: buffer.read_target()?,
             block_number: buffer.read_target()?,
             block_difficulty: buffer.read_target()?,
@@ -407,6 +426,7 @@ impl PublicValuesTarget {
             txn_number_after: buffer.read_target()?,
             gas_used_before: buffer.read_target()?,
             gas_used_after: buffer.read_target()?,
+            gas_used_l1: buffer.read_target_array()?,
         };
 
         Ok(Self {
@@ -577,6 +597,10 @@ impl TrieRootsTarget {
 pub struct BlockMetadataTarget {
     /// `Target`s for the address of this block's producer.
     pub(crate) block_beneficiary: [Target; 5],
+    /// `Target`s for the address of this block's producer.
+    pub(crate) block_l1_beneficiary: [Target; 5],
+    /// `Target`s for the address of this block's producer.
+    pub(crate) block_base_beneficiary: [Target; 5],
     /// `Target` for the timestamp of this block.
     pub(crate) block_timestamp: Target,
     /// `Target` for the index of this block.
@@ -605,27 +629,31 @@ pub struct BlockMetadataTarget {
 
 impl BlockMetadataTarget {
     /// Number of `Target`s required for the block metadata.
-    pub(crate) const SIZE: usize = 97;
+    pub(crate) const SIZE: usize = 107;
 
     /// Extracts block metadata `Target`s from the provided public input
     /// `Target`s. The provided `pis` should start with the block metadata.
     pub(crate) fn from_public_inputs(pis: &[Target]) -> Self {
         let block_beneficiary = pis[0..5].try_into().unwrap();
-        let block_timestamp = pis[5];
-        let block_number = pis[6];
-        let block_difficulty = pis[7];
-        let block_random = pis[8..16].try_into().unwrap();
-        let block_gaslimit = pis[16];
-        let block_chain_id = pis[17];
-        let block_base_fee = pis[18..20].try_into().unwrap();
-        let block_gas_used = pis[20];
-        let block_blob_gas_used = pis[21..23].try_into().unwrap();
-        let block_excess_blob_gas = pis[23..25].try_into().unwrap();
-        let parent_beacon_block_root = pis[25..33].try_into().unwrap();
-        let block_bloom = pis[33..97].try_into().unwrap();
+        let block_l1_beneficiary = pis[5..10].try_into().unwrap();
+        let block_base_beneficiary = pis[10..15].try_into().unwrap();
+        let block_timestamp = pis[15];
+        let block_number = pis[16];
+        let block_difficulty = pis[17];
+        let block_random = pis[18..26].try_into().unwrap();
+        let block_gaslimit = pis[26];
+        let block_chain_id = pis[27];
+        let block_base_fee = pis[28..30].try_into().unwrap();
+        let block_gas_used = pis[30];
+        let block_blob_gas_used = pis[31..33].try_into().unwrap();
+        let block_excess_blob_gas = pis[33..35].try_into().unwrap();
+        let parent_beacon_block_root = pis[35..43].try_into().unwrap();
+        let block_bloom = pis[43..107].try_into().unwrap();
 
         Self {
             block_beneficiary,
+            block_l1_beneficiary,
+            block_base_beneficiary,
             block_timestamp,
             block_number,
             block_difficulty,
@@ -655,6 +683,20 @@ impl BlockMetadataTarget {
                     condition,
                     bm0.block_beneficiary[i],
                     bm1.block_beneficiary[i],
+                )
+            }),
+            block_l1_beneficiary: core::array::from_fn(|i| {
+                builder.select(
+                    condition,
+                    bm0.block_l1_beneficiary[i],
+                    bm1.block_l1_beneficiary[i],
+                )
+            }),
+            block_base_beneficiary: core::array::from_fn(|i| {
+                builder.select(
+                    condition,
+                    bm0.block_base_beneficiary[i],
+                    bm1.block_base_beneficiary[i],
                 )
             }),
             block_timestamp: builder.select(condition, bm0.block_timestamp, bm1.block_timestamp),
@@ -820,11 +862,12 @@ pub struct ExtraBlockDataTarget {
     /// transition. It should match the `block_gas_used` value after
     /// execution of the last transaction in a block.
     pub gas_used_after: Target,
+    pub gas_used_l1: [Target; 2],
 }
 
 impl ExtraBlockDataTarget {
     /// Number of `Target`s required for the extra block data.
-    pub(crate) const SIZE: usize = 12;
+    const SIZE: usize = 14;
 
     /// Extracts the extra block data `Target`s from the public input `Target`s.
     /// The provided `pis` should start with the extra vblock data.
@@ -834,6 +877,7 @@ impl ExtraBlockDataTarget {
         let txn_number_after = pis[9];
         let gas_used_before = pis[10];
         let gas_used_after = pis[11];
+        let gas_used_l1 = pis[12..14].try_into().unwrap();
 
         Self {
             checkpoint_state_trie_root,
@@ -841,6 +885,7 @@ impl ExtraBlockDataTarget {
             txn_number_after,
             gas_used_before,
             gas_used_after,
+            gas_used_l1,
         }
     }
 
@@ -868,6 +913,9 @@ impl ExtraBlockDataTarget {
             txn_number_after: builder.select(condition, ed0.txn_number_after, ed1.txn_number_after),
             gas_used_before: builder.select(condition, ed0.gas_used_before, ed1.gas_used_before),
             gas_used_after: builder.select(condition, ed0.gas_used_after, ed1.gas_used_after),
+            gas_used_l1: core::array::from_fn(|i| {
+                builder.select(condition, ed0.gas_used_l1[i], ed1.gas_used_l1[i])
+            }),
         }
     }
 

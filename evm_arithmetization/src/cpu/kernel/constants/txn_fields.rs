@@ -34,10 +34,16 @@ pub(crate) enum NormalizedTxnField {
     /// block's base fee.
     ComputedFeePerGas,
     ComputedPriorityFeePerGas,
+
+    /// type 7e tx, optimism specific fields
+    SourceHash,
+    // From,
+    Mint,
+    IsSystemTx,
 }
 
 impl NormalizedTxnField {
-    pub(crate) const COUNT: usize = 17;
+    pub(crate) const COUNT: usize = 20;
 
     /// Unscales this virtual offset by their respective `Segment` value.
     #[cfg(test)]
@@ -64,6 +70,10 @@ impl NormalizedTxnField {
             Self::Origin,
             Self::ComputedFeePerGas,
             Self::ComputedPriorityFeePerGas,
+            Self::SourceHash,
+            // Self::From,
+            Self::Mint,
+            Self::IsSystemTx,
         ]
     }
 
@@ -89,6 +99,10 @@ impl NormalizedTxnField {
             NormalizedTxnField::ComputedPriorityFeePerGas => {
                 "TXN_FIELD_COMPUTED_PRIORITY_FEE_PER_GAS"
             }
+            NormalizedTxnField::SourceHash => "TXN_FIELD_SOURCE_HASH",
+            // NormalizedTxnField::From => "TXN_FIELD_FROM",
+            NormalizedTxnField::Mint => "TXN_FIELD_MINT",
+            NormalizedTxnField::IsSystemTx => "TXN_FIELD_IS_SYSTEM_TX",
         }
     }
 }

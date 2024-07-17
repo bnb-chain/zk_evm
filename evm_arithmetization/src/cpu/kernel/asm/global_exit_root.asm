@@ -8,6 +8,7 @@
 global set_global_exit_roots:
     // stack: (empty)
     PUSH start_txn
+    JUMP ///bypass
     // stack: retdest
     PROVER_INPUT(ger)
     // stack: num_ger, retdest

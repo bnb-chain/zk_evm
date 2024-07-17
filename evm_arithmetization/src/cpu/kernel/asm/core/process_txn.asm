@@ -72,6 +72,18 @@ global buy_gas:
     %mload_txn_field(@TXN_FIELD_ORIGIN)
     // stack: sender_addr, gas_cost, retdest
     %deduct_eth
+
+    // stack: deduct_eth_status, retdest
+    %jumpi(panic)
+    // stack: retdest
+    
+    // retdest
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_GAS_USED_L1)
+    // l1_fee, retdest
+    %mload_txn_field(@TXN_FIELD_ORIGIN)
+    // sender_addr, l1_fee, retdest
+    %deduct_eth
+
     // stack: deduct_eth_status, retdest
     %jumpi(panic)
     // stack: retdest
@@ -344,13 +356,33 @@ process_message_txn_fail:
     SUB
     // stack: used_gas', leftover_gas'
 
+    DUP1
+    // stack: used_gas', used_gas', leftover_gas'
+
     // Pay the coinbase.
     %mload_txn_field(@TXN_FIELD_COMPUTED_PRIORITY_FEE_PER_GAS)
     MUL
-    // stack: used_gas_tip, leftover_gas'
+    // stack: used_gas_tip, used_gas', leftover_gas'
     %mload_global_metadata(@GLOBAL_METADATA_BLOCK_BENEFICIARY)
-    // stack: coinbase, used_gas_tip, leftover_gas'
+    // stack: coinbase, used_gas_tip, used_gas', leftover_gas'
     %add_eth
+
+    // Pay the l1 coinbase.
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_GAS_USED_L1)
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_L1_BENEFICIARY)
+    // stack: l1_coinbase, l1_fee, used_gas', leftover_gas'
+    %add_eth
+
+    // Pay the Base coinbase.
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_BASE_FEE)
+    MUL
+    // stack: base_fee, leftover_gas'
+
+    // base fee added to base beneficiary
+    %mload_global_metadata(@GLOBAL_METADATA_BLOCK_BASE_BENEFICIARY)
+    // stack: base_coinbase, base_fee, leftover_gas'
+    %add_eth
+
     // stack: leftover_gas'
     DUP1
 

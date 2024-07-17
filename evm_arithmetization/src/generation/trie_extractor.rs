@@ -5,7 +5,7 @@ use ethereum_types::{BigEndianHash, H256, U256};
 use mpt_trie::nibbles::{Nibbles, NibblesIntern};
 use mpt_trie::partial_trie::{HashedPartialTrie, Node, PartialTrie, WrappedNode};
 
-use super::mpt::{AccountRlp, LegacyReceiptRlp, LogRlp};
+use super::mpt::{AccountRlp, DepositReceiptRlp, LegacyReceiptRlp, LogRlp};
 use crate::cpu::kernel::constants::trie_type::PartialTrieType;
 use crate::memory::segments::Segment;
 use crate::util::{u256_to_bool, u256_to_h160, u256_to_u8, u256_to_usize};
@@ -18,10 +18,11 @@ pub(crate) fn read_storage_trie_value(slice: &[Option<U256>]) -> U256 {
 
 pub(crate) fn read_receipt_trie_value(
     slice: &[Option<U256>],
-) -> Result<(Option<u8>, LegacyReceiptRlp), ProgramError> {
+) -> Result<(Option<u8>, DepositReceiptRlp), ProgramError> {
     let first_value = slice[0].unwrap_or_default();
     // Skip two elements for non-legacy Receipts, and only one otherwise.
-    let (first_byte, slice) = if first_value == U256::one() || first_value == U256::from(2u8) {
+    let is_type126 = first_value == U256::from(126u8);
+    let (first_byte, slice) = if first_value == U256::one() || first_value == U256::from(2u8) || is_type126 {
         (Some(first_value.as_u32() as u8), &slice[2..])
     } else {
         (None, &slice[1..])
@@ -35,18 +36,29 @@ pub(crate) fn read_receipt_trie_value(
         .collect::<Result<_, _>>()?;
     // We read the number of logs at position `2 + 256 + 1`, and skip over the next
     // element before parsing the logs.
-    let logs = read_logs(
+    let (logs, offset) = read_logs(
         u256_to_usize(slice[2 + 256 + 1].unwrap_or_default())?,
         &slice[2 + 256 + 3..],
     )?;
+    println!("############ offset={}", offset); // TODO REMOVE
+    let mut deposit_nonce = U256::zero();
+    let mut deposit_receipt_version = U256::zero();
+    if is_type126 {
+        let idx = 2 + 256 + 2 + offset;
+        deposit_nonce = slice[idx].unwrap_or_default();
+        deposit_receipt_version = slice[idx + 1].unwrap_or_default();
+    }
 
+    // TODO define a new type for DepositReceipt
     Ok((
         first_byte,
-        LegacyReceiptRlp {
+        DepositReceiptRlp {
             status,
             cum_gas_used,
             bloom,
             logs,
+            deposit_nonce,
+            deposit_receipt_version,
         },
     ))
 }
@@ -54,14 +66,14 @@ pub(crate) fn read_receipt_trie_value(
 pub(crate) fn read_logs(
     num_logs: usize,
     slice: &[Option<U256>],
-) -> Result<Vec<LogRlp>, ProgramError> {
+) -> Result<(Vec<LogRlp>, usize), ProgramError> {
     let mut offset = 0;
-    (0..num_logs)
+    let logs = (0..num_logs)
         .map(|_| {
-            let address = u256_to_h160(slice[offset].unwrap_or_default())?;
+            let address = u256_to_h160(slice[offset].unwrap_or_default()).unwrap();
             offset += 1;
 
-            let num_topics = u256_to_usize(slice[offset].unwrap_or_default())?;
+            let num_topics = u256_to_usize(slice[offset].unwrap_or_default()).unwrap();
             offset += 1;
 
             let topics = (0..num_topics)
@@ -69,13 +81,13 @@ pub(crate) fn read_logs(
                 .collect();
             offset += num_topics;
 
-            let data_len = u256_to_usize(slice[offset].unwrap_or_default())?;
+            let data_len = u256_to_usize(slice[offset].unwrap_or_default()).unwrap();
             offset += 1;
 
             let data = slice[offset..offset + data_len]
                 .iter()
                 .map(|&x| u256_to_u8(x.unwrap_or_default()))
-                .collect::<Result<_, _>>()?;
+                .collect::<Result<_, _>>().unwrap();
             offset += data_len + 1; // We need to skip one extra element before looping.
 
             let log = LogRlp {
@@ -84,9 +96,10 @@ pub(crate) fn read_logs(
                 data,
             };
 
-            Ok(log)
+            log
         })
-        .collect()
+        .collect();
+    Ok((logs, offset))
 }
 
 pub(crate) fn read_state_rlp_value(
